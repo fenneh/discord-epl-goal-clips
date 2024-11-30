@@ -159,8 +159,8 @@ def is_duplicate_score(title, timestamp):
     for posted_title, posted_time in list(posted_scores.items()):
         time_diff = timestamp - posted_time.replace(tzinfo=timezone.utc)
         
-        # Only check posts within last 30 seconds
-        if time_diff.total_seconds() < 30:
+        # Only check posts within last 300 seconds
+        if time_diff.total_seconds() < 300:
             posted_normalized = normalize_score_pattern(posted_title)
             similarity = get_similarity_ratio(normalized_score, posted_normalized)
             logging.debug(f"Comparing with: {posted_title}")
