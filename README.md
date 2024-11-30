@@ -7,13 +7,38 @@ Goal Bot is a Python-based Reddit bot that monitors the r/soccer subreddit for p
 - Monitors r/soccer subreddit for new posts
 - Identifies posts containing goal-related keywords and Premier League team names
 - Checks for duplicate scores within a 30-second window
-- Fetches direct video links from specific sites
-- Posts updates to a Discord channel
+- Fetches direct video links from supported sites:
+  - streamff.co
+  - streamin.one
+  - dubz.link
+- Posts updates to a Discord channel with rich embeds
+- Automatic retry mechanism for failed video extractions
+- Score normalization and duplicate detection
+- Rate limit monitoring for Reddit API
+- Configurable logging
+- Test modes for development and debugging
 
 ## Requirements
 
 - Python 3.9
 - Docker
+
+## Configuration
+
+The bot can be configured using environment variables in your `.env` file:
+
+```env
+CLIENT_ID=your_client_id
+CLIENT_SECRET=your_client_secret
+USER_AGENT=your_user_agent
+DISCORD_WEBHOOK_URL=your_discord_webhook_url
+```
+
+Additional configuration options are available in the code:
+- Goal detection keywords
+- Premier League team names and aliases
+- Supported video hosting sites
+- Score matching patterns
 
 ## Installation
 
@@ -47,17 +72,55 @@ Goal Bot is a Python-based Reddit bot that monitors the r/soccer subreddit for p
 
 2. The bot will start monitoring the r/soccer subreddit and posting updates to Discord.
 
+### Test Modes
+
+The bot includes several test modes for development and debugging:
+
+1. Reprocess historical posts:
+    ```sh
+    python goal-bot.py --test 24  # Reprocess posts from last 24 hours
+    ```
+
+2. Send a single test post:
+    ```sh
+    python goal-bot.py --test-post
+    ```
+
 ### Running with Docker
 
 1. Build the Docker image:
     ```sh
-    ./build.sh
+    docker build -t goal-bot .
     ```
 
-2. Run the Docker container:
+2. Run the container:
     ```sh
-    docker run -d -p 80:80 --env-file .env goal-bot-app
+    docker run -d --name goal-bot --env-file .env goal-bot
     ```
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Missing Video Links**: The bot will automatically retry failed video extractions for supported sites.
+2. **Rate Limits**: The bot monitors Reddit API rate limits and logs relevant information.
+3. **Duplicate Posts**: Posts with similar scores within 30 seconds are automatically filtered.
+
+## Development
+
+The bot uses several helper functions for processing:
+- Score normalization and duplicate detection
+- Team name matching with aliases
+- Video URL extraction for supported sites
+- Discord webhook formatting
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## File Structure
 
