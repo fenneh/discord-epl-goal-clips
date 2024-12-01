@@ -25,6 +25,8 @@ CLIENT_ID = os.getenv('CLIENT_ID')
 CLIENT_SECRET = os.getenv('CLIENT_SECRET')
 USER_AGENT = os.getenv('USER_AGENT')
 DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
+DISCORD_USERNAME = os.getenv('DISCORD_USERNAME', 'Ally')  # Default to 'Ally' if not set
+DISCORD_AVATAR_URL = os.getenv('DISCORD_AVATAR_URL', 'https://cdn1.rangersnews.uk/uploads/24/2024/03/GettyImages-459578698-scaled-e1709282146939-1024x702.jpg')  # Default to current image if not set
 
 # Initialize Reddit API
 reddit = praw.Reddit(
@@ -207,7 +209,7 @@ def get_direct_video_link(url):
 def find_team_in_title(title):
     """Find the scoring team in the title based on square brackets and return its data"""
     # Look for the scoring pattern with square brackets
-    score_pattern = re.search(r'(\d+)\s*-\s*\[(\d+)\]|\[(\d+)\]\s*-\s*(\d+)', title)
+    score_pattern = re.search(r'(\d+)\s*-\s*\[\d+\]|\[\d+\]\s*-\s*(\d+)', title)
     if score_pattern:
         # Split title around the score
         parts = re.split(r'\d+\s*-\s*\[\d+\]|\[\d+\]\s*-\s*\d+', title)
@@ -246,8 +248,8 @@ def retry_mp4_extraction(title, urls):
                     # Post just the MP4 to Discord
                     mp4_data = {
                         "content": mp4_url,
-                        "username": "Ally",
-                        "avatar_url": "https://cdn1.rangersnews.uk/uploads/24/2024/03/GettyImages-459578698-scaled-e1709282146939-1024x702.jpg"
+                        "username": DISCORD_USERNAME,
+                        "avatar_url": DISCORD_AVATAR_URL
                     }
                     
                     response = requests.post(
@@ -304,8 +306,8 @@ def post_to_discord(title, url, mp4_url=None):
         # Send the styled embed immediately
         styled_data = {
             "embeds": [embed],
-            "username": "Ally",
-            "avatar_url": "https://cdn1.rangersnews.uk/uploads/24/2024/03/GettyImages-459578698-scaled-e1709282146939-1024x702.jpg"
+            "username": DISCORD_USERNAME,
+            "avatar_url": DISCORD_AVATAR_URL
         }
         
         response = requests.post(
@@ -321,8 +323,8 @@ def post_to_discord(title, url, mp4_url=None):
             time.sleep(1)  # Small delay to ensure correct order
             mp4_data = {
                 "content": mp4_url,
-                "username": "Ally",
-                "avatar_url": "https://cdn1.rangersnews.uk/uploads/24/2024/03/GettyImages-459578698-scaled-e1709282146939-1024x702.jpg"
+                "username": DISCORD_USERNAME,
+                "avatar_url": DISCORD_AVATAR_URL
             }
             
             response = requests.post(

@@ -32,6 +32,8 @@ CLIENT_ID=your_client_id
 CLIENT_SECRET=your_client_secret
 USER_AGENT=your_user_agent
 DISCORD_WEBHOOK_URL=your_discord_webhook_url
+DISCORD_USERNAME=your_webhook_username        # Optional: defaults to 'Ally'
+DISCORD_AVATAR_URL=your_webhook_avatar_url    # Optional: defaults to preset image
 ```
 
 Additional configuration options are available in the code:
@@ -54,6 +56,8 @@ Additional configuration options are available in the code:
     CLIENT_SECRET=your_client_secret
     USER_AGENT=your_user_agent
     DISCORD_WEBHOOK_URL=your_discord_webhook_url
+    DISCORD_USERNAME=your_webhook_username        # Optional: defaults to 'Ally'
+    DISCORD_AVATAR_URL=your_webhook_avatar_url    # Optional: defaults to preset image
     ```
 
 3. Install the required Python packages:
