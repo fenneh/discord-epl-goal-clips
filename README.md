@@ -90,6 +90,29 @@ The bot includes several test modes for development and debugging:
     python goal-bot.py --test-post
     ```
 
+3. Debug URL processing:
+    ```sh
+    python goal-bot.py --debug-urls  # Test URL extraction without posting to Discord
+    ```
+
+The debug mode performs the following validations:
+- Ensures all URLs start with `https://`
+- Validates URLs with HEAD requests to confirm accessibility
+- Removes URL fragments (e.g., `#t=0.1`) that can cause playback issues
+- Shows detailed logging of URL processing and validation
+
+### URL Processing
+
+The bot supports extracting video URLs from these sources:
+- `streamff.co` -> `https://ffedge.streamff.com/uploads/[id].mp4`
+- `streamin.one` -> `https://streamin.fun/uploads/[id].mp4`
+- `dubz.link` -> `https://cdn.squeelab.com/guest/videos/[id].mp4`
+
+Each URL is validated before posting to ensure:
+1. Complete URL format (https://)
+2. Accessibility (200 status code)
+3. Clean format (no fragments or malformed components)
+
 ### Running with Docker
 
 1. Build the Docker image:

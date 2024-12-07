@@ -403,16 +403,33 @@ class VideoExtractor:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
 
+    def validate_mp4_url(self, url):
+        """Validate that an MP4 URL is complete and accessible"""
+        if not url:
+            return None
+            
+        # Ensure URL starts with https://
+        if not url.startswith('https://'):
+            logging.debug(f"Invalid URL format (no https://): {url}")
+            return None
+            
+        try:
+            # Try a HEAD request to validate the URL
+            response = requests.head(url, headers=self.headers, timeout=5)
+            if response.status_code == 200:
+                return url
+            logging.debug(f"URL validation failed with status code {response.status_code}: {url}")
+            return None
+        except Exception as e:
+            logging.error(f"Error validating URL {url}: {e}")
+            return None
+
     def extract_from_streamff(self, url):
         """Extract MP4 URL from streamff.co"""
         try:
             video_id = url.split('/')[-1]
             mp4_url = f"https://ffedge.streamff.com/uploads/{video_id}.mp4"
-            response = requests.head(mp4_url, headers=self.headers)
-            if response.status_code == 200:
-                return mp4_url
-            logging.debug(f"MP4 URL status code: {response.status_code}")
-            return None
+            return self.validate_mp4_url(mp4_url)
         except Exception as e:
             logging.error(f"Error extracting from streamff: {e}")
             return None
@@ -425,11 +442,19 @@ class VideoExtractor:
             # Look for source tags within video elements
             source = soup.find('source')
             if source and source.get('src'):
-                return source['src']
+                # Remove the #t=0.1 fragment if present
+                mp4_url = source['src']
+                if '#t=' in mp4_url:
+                    mp4_url = mp4_url.split('#')[0]
+                return self.validate_mp4_url(mp4_url)
             # If no source tag, look for video tag
             video = soup.find('video')
             if video and video.get('src'):
-                return video['src']
+                # Remove the #t=0.1 fragment if present
+                mp4_url = video['src']
+                if '#t=' in mp4_url:
+                    mp4_url = mp4_url.split('#')[0]
+                return self.validate_mp4_url(mp4_url)
             return None
         except Exception as e:
             logging.error(f"Error extracting from streamin: {e}")
@@ -440,11 +465,7 @@ class VideoExtractor:
         try:
             video_id = url.split('/')[-1]
             mp4_url = f"https://cdn.squeelab.com/guest/videos/{video_id}.mp4"
-            response = requests.head(mp4_url, headers=self.headers)
-            if response.status_code == 200:
-                return mp4_url
-            logging.debug(f"MP4 URL status code: {response.status_code}")
-            return None
+            return self.validate_mp4_url(mp4_url)
         except Exception as e:
             logging.error(f"Error extracting from dubz: {e}")
             return None
@@ -501,15 +522,54 @@ def reprocess_history(hours_ago=24):
             mp4_url = video_extractor.extract_mp4_url(url)
             if mp4_url:
                 successful_extractions += 1
-                print(f"✓ Extracted MP4: {mp4_url}")
+                print(f"[+] Extracted MP4: {mp4_url}")
             else:
-                print(f"✗ No MP4 URL found")
+                print(f"[-] No MP4 URL found")
     
     # Print summary
     print("\n" + "=" * 80)
     print(f"TEST MODE SUMMARY:")
     print(f"Processed {processed_count} URLs")
     print(f"Successfully extracted {successful_extractions} MP4 URLs")
+    print("=" * 80)
+
+def debug_urls():
+    """Debug mode: Process URLs from pickle files without posting to Discord"""
+    load_history()
+    
+    print("\nDEBUG MODE: Processing URLs from pickle files")
+    print(f"Found {len(posted_urls)} URLs to process")
+    print("-" * 80)
+    
+    # Create a new VideoExtractor
+    video_extractor = VideoExtractor()
+    
+    # Process each URL in posted_urls
+    for url in posted_urls:
+        if contains_specific_site(url):
+            print(f"\nProcessing URL: {url}")
+            
+            # Try each video extractor method
+            if "streamff.co" in url:
+                print("Using streamff extractor")
+                mp4_url = video_extractor.extract_from_streamff(url)
+            elif "streamin.one" in url:
+                print("Using streamin extractor")
+                mp4_url = video_extractor.extract_from_streamin(url)
+            elif "dubz.link" in url:
+                print("Using dubz extractor")
+                mp4_url = video_extractor.extract_from_dubz(url)
+            else:
+                print("No matching extractor found")
+                mp4_url = None
+            
+            if mp4_url:
+                print(f"[+] Extracted MP4: {mp4_url}")
+            else:
+                print(f"[-] No MP4 URL found")
+    
+    print("\n" + "=" * 80)
+    print(f"DEBUG MODE COMPLETE")
     print("=" * 80)
 
 def check_rate_limit(response):
@@ -590,12 +650,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Goal Bot with test modes')
     parser.add_argument('--test', type=int, help='Reprocess posts from the last X hours')
     parser.add_argument('--test-post', action='store_true', help='Send a single test post to Discord')
+    parser.add_argument('--debug-urls', action='store_true', help='Debug mode: Process URLs without posting')
     args = parser.parse_args()
     
     if args.test:
         reprocess_history(args.test)
     elif args.test_post:
         test_single_post()
+    elif args.debug_urls:
+        debug_urls()
     else:
         # Normal bot operation
         while True:
@@ -603,7 +666,7 @@ if __name__ == "__main__":
                 # Fetch new posts from r/soccer
                 subreddit = reddit.subreddit('soccer')
                 logging.info("Checking new posts in r/soccer...")
-
+                
                 # Iterate through the new posts of the subreddit
                 for submission in subreddit.new(limit=10):
                     title = submission.title
