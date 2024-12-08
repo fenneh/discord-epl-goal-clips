@@ -71,7 +71,7 @@ Additional configuration options are available in the code:
 
 1. Load the history of posted URLs and scores:
     ```python
-    python goal-bot.py
+    python goal_bot.py
     ```
 
 2. The bot will start monitoring the r/soccer subreddit and posting updates to Discord.
@@ -82,17 +82,17 @@ The bot includes several test modes for development and debugging:
 
 1. Reprocess historical posts:
     ```sh
-    python goal-bot.py --test 24  # Reprocess posts from last 24 hours
+    python goal_bot.py --test 24  # Reprocess posts from last 24 hours
     ```
 
 2. Send a single test post:
     ```sh
-    python goal-bot.py --test-post
+    python goal_bot.py --test-post
     ```
 
 3. Debug URL processing:
     ```sh
-    python goal-bot.py --debug-urls  # Test URL extraction without posting to Discord
+    python goal_bot.py --debug-urls  # Test URL extraction without posting to Discord
     ```
 
 The debug mode performs the following validations:
@@ -141,6 +141,47 @@ The bot uses several helper functions for processing:
 - Video URL extraction for supported sites
 - Discord webhook formatting
 
+## Testing
+
+The bot includes a comprehensive test suite in `test_goal_bot.py` that verifies key functionality:
+
+### Running Tests
+
+Run the test suite using:
+```sh
+python -m unittest test_goal_bot.py -v
+```
+
+### Test Coverage
+
+The test suite covers:
+
+1. Score Pattern Normalization
+   - Handles abbreviated vs. full player names (e.g., "E. Haaland" vs "Erling Haaland")
+   - Normalizes case and whitespace
+   - Processes different score formats (home/away team scoring)
+
+2. Duplicate Detection
+   - Validates same goal with different player name formats
+   - Ensures different goals are not marked as duplicates
+   - Checks goals with same minute but different scores
+   - Verifies goals with same teams but different scorers
+
+### Test Cases
+
+Example test scenarios:
+```python
+# Same goal, different player name formats (should be duplicate)
+"Crystal Palace 1 - [1] Manchester City - E. Haaland 30'"
+"Crystal Palace 1 - [1] Manchester City - Erling Haaland 30'"
+
+# Different goals (should not be duplicate)
+"Crystal Palace 1 - [1] Manchester City - E. Haaland 30'"
+"Crystal Palace [2] - 1 Manchester City - M. Lacroix 56'"
+```
+
+Each test case uses isolated state to ensure consistent results, and includes detailed logging for debugging.
+
 ## Contributing
 
 1. Fork the repository
@@ -151,7 +192,7 @@ The bot uses several helper functions for processing:
 
 ## File Structure
 
-- `goal-bot.py`: Main script for the bot
+- `goal_bot.py`: Main script for the bot
 - `requirements.txt`: List of required Python packages
 - `Dockerfile`: Docker configuration
 - `build.sh`: Script to build and run the Docker container

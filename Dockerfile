@@ -16,5 +16,5 @@ EXPOSE 80
 # Define environment variable
 ENV NAME World
 
-# Run goal-bot.py when the container launches
-CMD ["python", "goal-bot.py"]
+# Run goal_bot.py when the container launches
+CMD ["python", "goal_bot.py"]
