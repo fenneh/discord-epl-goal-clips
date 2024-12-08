@@ -8,3 +8,6 @@ __pycache__/
 
 # Pickle files
 *.pkl
+
+# Logs
+.log
