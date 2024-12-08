@@ -10,4 +10,4 @@ __pycache__/
 *.pkl
 
 # Logs
-.log
+*.log
