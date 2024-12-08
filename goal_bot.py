@@ -12,10 +12,18 @@ from difflib import SequenceMatcher
 import argparse
 import threading
 
+# Configure main logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+# Configure separate logger for failed extractions
+failed_extractions_logger = logging.getLogger('failed_extractions')
+failed_extractions_logger.setLevel(logging.INFO)
+failed_handler = logging.FileHandler('failed_extractions.log')
+failed_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+failed_extractions_logger.addHandler(failed_handler)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -192,10 +200,11 @@ def contains_premier_league_team(title):
     """Check if the post title contains any Premier League team names or aliases."""
     title_lower = title.lower()
     for team, data in premier_league_teams.items():
-        if any(name.lower() in title_lower for name in data["names"]):
+        # Create patterns with word boundaries for each team name
+        if any(re.search(r'\b' + re.escape(name.lower()) + r'\b', title_lower) for name in data["names"]):
             logging.debug(f"Premier League team found: '{team}' in title: '{title}'")
             return True
-    logging.debug(f"No Premier League teams found in title: '{title}'")
+    logging.debug(f"No Premier League team found in title: '{title}'")
     return False
 
 def get_direct_video_link(url):
@@ -278,6 +287,7 @@ def retry_mp4_extraction(title, urls):
             attempt += 1
     
     logging.warning(f"Failed to find MP4 URL after {attempt} attempts over 3 minutes for: {title}")
+    failed_extractions_logger.info(f"Failed to find MP4 URL after {attempt} attempts over 3 minutes for: {title}")
     mp4_retry_posts.remove(title)  # Remove from tracking set after all attempts
 
 def post_to_discord(title, url, mp4_url=None):
@@ -461,8 +471,8 @@ class VideoExtractor:
             
         try:
             # Try a HEAD request to validate the URL
-            response = requests.head(url, headers=self.headers, timeout=5)
-            if response.status_code == 200:
+            response = requests.head(url, headers=self.headers, timeout=5, allow_redirects=True)
+            if response.status_code in [200, 302]:
                 return url
             logging.debug(f"URL validation failed with status code {response.status_code}: {url}")
             return None
@@ -520,14 +530,20 @@ class VideoExtractor:
         """Main method to extract MP4 URL from supported sites"""
         logging.info(f"Attempting to extract MP4 from: {url}")
         
-        if "streamff.co" in url:
-            return self.extract_from_streamff(url)
-        elif any(domain in url for domain in streamin_domains):
-            return self.extract_from_streamin(url)
-        elif "dubz.link" in url:
-            return self.extract_from_dubz(url)
-        else:
-            logging.warning(f"Unsupported URL: {url}")
+        try:
+            if 'streamff.co' in url:
+                return self.extract_from_streamff(url)
+            elif any(domain in url for domain in streamin_domains):
+                return self.extract_from_streamin(url)
+            elif 'dubz.link' in url:
+                return self.extract_from_dubz(url)
+            else:
+                logging.warning(f"Unsupported URL format: {url}")
+                failed_extractions_logger.info(f"Unsupported URL format: {url}")
+                return None
+        except Exception as e:
+            logging.error(f"Error extracting MP4 from {url}: {str(e)}")
+            failed_extractions_logger.info(f"Error extracting MP4 from {url}: {str(e)}")
             return None
 
 # Initialize the video extractor at the top level
