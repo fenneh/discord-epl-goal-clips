@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 import logging
 from difflib import SequenceMatcher
 import argparse
-import threading
+from threading import Thread
 import uvicorn
 from fastapi import FastAPI
 import asyncio
@@ -359,7 +359,7 @@ def post_to_discord(title, url, mp4_url=None):
         else:
             # Start background retry process for MP4 extraction
             urls = [url]  # Add any additional URLs you want to try
-            retry_thread = threading.Thread(
+            retry_thread = Thread(
                 target=retry_mp4_extraction,
                 args=(title, urls),
                 daemon=True
