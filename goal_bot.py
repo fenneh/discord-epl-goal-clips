@@ -11,6 +11,9 @@ import logging
 from difflib import SequenceMatcher
 import argparse
 import threading
+import uvicorn
+from fastapi import FastAPI
+import asyncio
 
 # Configure main logging
 logging.basicConfig(
@@ -708,13 +711,27 @@ def test_single_post():
     except Exception as e:
         logging.error(f"Error in test mode: {e}")
 
+# Initialize FastAPI app
+app = FastAPI()
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+def run_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=8080)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Goal Bot with test modes')
     parser.add_argument('--test', type=int, help='Reprocess posts from the last X hours')
     parser.add_argument('--test-post', action='store_true', help='Send a single test post to Discord')
     parser.add_argument('--debug-urls', action='store_true', help='Debug mode: Process URLs without posting')
     args = parser.parse_args()
-    
+
+    # Start FastAPI in a separate thread
+    api_thread = Thread(target=run_fastapi, daemon=True)
+    api_thread.start()
+
     if args.test:
         reprocess_history(args.test)
     elif args.test_post:
