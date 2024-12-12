@@ -56,6 +56,12 @@ goal_keywords = [
     r"\d+\s*-\s*\[\d+\]",  # Matches 2 - [5]
 ]
 
+# Terms to exclude from posts (e.g., women's football, youth games)
+excluded_terms = [
+    r'\bW\b',  # Women's football (single W)
+    r'\bU19\b',  # Under-19 games
+]
+
 # Specific websites to match URLs
 streamin_domains = ["streamin.one", "streamin.me", "streamin.pro", "streamin.live", "streamin.cc", "streamin.xyz"]
 specific_sites = ["streamff.co"] + streamin_domains + ["dubz.link"]
@@ -193,6 +199,15 @@ def contains_goal_keyword(title):
             logging.debug(f"Goal keyword found: '{keyword}' in title: '{title}'")
             return True
     logging.debug(f"No goal keywords found in title: '{title}'")
+    return False
+
+def contains_excluded_term(title):
+    """Check if the post title contains any excluded terms."""
+    for term in excluded_terms:
+        if re.search(term, title.lower()):
+            logging.debug(f"Excluded term found: '{term}' in title: '{title}'")
+            return True
+    logging.debug(f"No excluded terms found in title: '{title}'")
     return False
 
 def contains_specific_site(url):
@@ -666,8 +681,9 @@ def test_single_post():
             # Check if the post title contains a goal-related keyword and a Premier League team
             has_goal = contains_goal_keyword(title)
             has_team = contains_premier_league_team(title)
+            has_excluded_term = contains_excluded_term(title)
             
-            if has_goal and has_team:
+            if has_goal and has_team and not has_excluded_term:
                 logging.info(f"Found valid goal post: '{title}'")
                 matched_urls = []
                 
@@ -704,7 +720,7 @@ def test_single_post():
                     return  # Exit after sending one post
                 
             else:
-                logging.debug(f"Post skipped: has_goal={has_goal}, has_team={has_team}")
+                logging.debug(f"Post skipped: has_goal={has_goal}, has_team={has_team}, has_excluded_term={has_excluded_term}")
         
         logging.info("No matching posts found in test mode")
         
@@ -761,8 +777,9 @@ if __name__ == "__main__":
                     # Check if the post title contains a goal-related keyword and a Premier League team
                     has_goal = contains_goal_keyword(title)
                     has_team = contains_premier_league_team(title)
+                    has_excluded_term = contains_excluded_term(title)
                     
-                    if has_goal and has_team:
+                    if has_goal and has_team and not has_excluded_term:
                         logging.info(f"Found valid goal post: '{title}'")
                         matched_urls = []
                         
