@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import logging
+from logging.handlers import RotatingFileHandler
 from difflib import SequenceMatcher
 import argparse
 from threading import Thread
@@ -15,16 +16,27 @@ import uvicorn
 from fastapi import FastAPI
 import asyncio
 
-# Configure main logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Configure main logging with rotation
+log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+main_log_file = 'goal_bot.log'
+main_handler = RotatingFileHandler(main_log_file, maxBytes=5*1024*1024, backupCount=5)  # 5MB per file, keep 5 files
+main_handler.setFormatter(log_formatter)
 
-# Configure separate logger for failed extractions
+# Configure console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+
+# Setup root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+root_logger.addHandler(main_handler)
+root_logger.addHandler(console_handler)
+
+# Configure separate logger for failed extractions with rotation
 failed_extractions_logger = logging.getLogger('failed_extractions')
 failed_extractions_logger.setLevel(logging.INFO)
-failed_handler = logging.FileHandler('failed_extractions.log')
+failed_log_file = 'failed_extractions.log'
+failed_handler = RotatingFileHandler(failed_log_file, maxBytes=2*1024*1024, backupCount=3)  # 2MB per file, keep 3 files
 failed_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 failed_extractions_logger.addHandler(failed_handler)
 
