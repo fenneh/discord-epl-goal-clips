@@ -58,8 +58,8 @@ goal_keywords = [
 
 # Terms to exclude from posts (e.g., women's football, youth games)
 excluded_terms = [
-    r'\bW\b',  # Women's football (single W)
-    r'\bU19\b',  # Under-19 games
+    r'\bW\b',  # Matches standalone W
+    r'\bU19\b',  # Matches U19
 ]
 
 # Specific websites to match URLs
@@ -204,7 +204,7 @@ def contains_goal_keyword(title):
 def contains_excluded_term(title):
     """Check if the post title contains any excluded terms."""
     for term in excluded_terms:
-        if re.search(term, title.lower()):
+        if re.search(term, title):  
             logging.debug(f"Excluded term found: '{term}' in title: '{title}'")
             return True
     logging.debug(f"No excluded terms found in title: '{title}'")
@@ -727,6 +727,23 @@ def test_single_post():
     except Exception as e:
         logging.error(f"Error in test mode: {e}")
 
+def test_exclusion_patterns():
+    """Test function to verify exclusion patterns."""
+    test_titles = [
+        "Vålerenga W 0-3 Arsenal W - Alessia Russo 58",
+        "Juventus U19 1-[1] Manchester City U19 - Lakyle Samuel 34'",
+        "Arsenal 2-0 Brighton - Gabriel Jesus 53'",  # Should not be excluded
+    ]
+    
+    for title in test_titles:
+        excluded = contains_excluded_term(title)
+        print(f"\nTesting title: {title}")
+        print(f"Excluded: {excluded}")
+        if excluded:
+            for term in excluded_terms:
+                if re.search(term, title):
+                    print(f"Matched pattern: {term}")
+
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -742,6 +759,7 @@ if __name__ == "__main__":
     parser.add_argument('--test', type=int, help='Reprocess posts from the last X hours')
     parser.add_argument('--test-post', action='store_true', help='Send a single test post to Discord')
     parser.add_argument('--debug-urls', action='store_true', help='Debug mode: Process URLs without posting')
+    parser.add_argument('--test-exclusion', action='store_true', help='Test exclusion patterns')
     args = parser.parse_args()
 
     # Start FastAPI in a separate thread
@@ -754,6 +772,8 @@ if __name__ == "__main__":
         test_single_post()
     elif args.debug_urls:
         debug_urls()
+    elif args.test_exclusion:
+        test_exclusion_patterns()
     else:
         # Normal bot operation
         while True:
