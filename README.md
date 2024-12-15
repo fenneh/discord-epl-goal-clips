@@ -182,6 +182,28 @@ Example test scenarios:
 
 Each test case uses isolated state to ensure consistent results, and includes detailed logging for debugging.
 
+## Test Scripts
+
+The repository includes test scripts for validating URL processing:
+
+1. PowerShell script (Windows):
+    ```powershell
+    .\test_urls.ps1
+    ```
+
+2. Bash script (Linux/Mac):
+    ```bash
+    ./test_urls.sh
+    ```
+
+These scripts allow you to test multiple Reddit thread URLs sequentially, with the following features:
+- Colorized output for better readability
+- Pauses between URLs for result review
+- Ignores previously posted URLs and duplicates
+- Easy to update with new test URLs
+
+To add new test URLs, edit the `urls` array at the top of the script with the Reddit thread IDs.
+
 ## Contributing
 
 1. Fork the repository
