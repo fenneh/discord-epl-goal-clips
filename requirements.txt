@@ -1,7 +1,7 @@
 pandas
 requests
 python-dotenv
-praw
+asyncpraw
 beautifulsoup4
 fastapi
 uvicorn

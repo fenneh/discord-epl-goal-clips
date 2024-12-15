@@ -22,5 +22,5 @@ EXPOSE 8080
 # - DISCORD_USERNAME: Bot username (default: 'Ally')
 # - DISCORD_AVATAR_URL: Bot avatar URL (has default)
 
-# Run goal_bot.py when the container launches
-CMD ["python", "goal_bot.py"]
+# Run the FastAPI application when the container launches
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
