@@ -3,13 +3,13 @@
 import asyncpraw
 import re
 import aiohttp
-from typing import Optional, Dict
+from typing import Optional, Dict, Any, Union
 from bs4 import BeautifulSoup
 from src.config import CLIENT_ID, CLIENT_SECRET, USER_AGENT
 from src.utils.logger import app_logger
 from src.config.teams import premier_league_teams
-from src.services.video_service import video_extractor  # Fix import path
-from urllib.parse import urlparse
+from src.utils.url_utils import get_base_domain
+from src.services.video_service import video_extractor  
 
 async def create_reddit_client() -> asyncpraw.Reddit:
     """Create and return a Reddit client instance.
@@ -27,104 +27,86 @@ def clean_text(text: str) -> str:
     """Clean text to handle unicode characters."""
     return text.encode('ascii', 'ignore').decode('utf-8')
 
-def find_team_in_title(title: str) -> Optional[Dict]:
-    """Find the scoring team in a post title based on square brackets.
+def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[Union[str, Dict[str, Any]]]:
+    """Find Premier League team in post title.
     
     Args:
         title (str): Post title to search
+        include_metadata (bool): If True, return team data dictionary, otherwise just team name
         
     Returns:
-        dict: Team data if found, None otherwise. Only returns if at least one team is from Premier League.
+        Optional[Union[str, Dict[str, Any]]]: Team name/data if found, None otherwise
     """
-    title = clean_text(title)  # Clean title before logging
-    title_lower = title.lower()
-    app_logger.info(f"Finding team in title: {title}")
-    
-    # Look for score patterns
+    if not title:
+        return None
+        
+    # Look for score patterns first
     score_patterns = [
         r'(.*?)\s*\[(\d+)\]\s*-\s*(\d+)\s*(.*)',  # Team1 [1] - 0 Team2
         r'(.*?)\s*(\d+)\s*-\s*\[(\d+)\]\s*(.*)',  # Team1 0 - [1] Team2
         r'(.*?)\s*\[(\d+)\s*-\s*(\d+)\]\s*(.*)',  # Team1 [1-0] Team2
     ]
     
+    title_lower = title.lower()
+    
     for pattern in score_patterns:
         match = re.search(pattern, title_lower)
         if match:
             team1, score1, score2, team2 = match.groups()
-            
-            # Clean up team names
             team1 = team1.strip()
             team2 = team2.strip()
             
             # Determine which team scored based on bracket position
-            team1_scored = '[' in title.split('-')[0]
-            scoring_team = team1 if team1_scored else team2
-            other_team = team2 if team1_scored else team1
-            final_score = f"{score1}-{score2}" if team1_scored else f"{score2}-{score1}"
+            is_team1_scoring = '[' in title.split('-')[0]
+            scoring_team = team1 if is_team1_scoring else team2
+            other_team = team2 if is_team1_scoring else team1
             
-            # Check if either team is in Premier League
-            pl_team_found = False
-            scoring_team_data = None
-            other_team_data = None
-            
+            # Find Premier League team
             for team_name, team_data in premier_league_teams.items():
                 team_name_lower = team_name.lower()
                 aliases = [alias.lower() for alias in team_data.get('aliases', [])]
                 
-                # Add word boundaries to prevent partial matches
-                team_pattern = rf'\b({team_name_lower}|{"|".join(aliases)})\b'
+                # Create patterns with word boundaries
+                team_patterns = [rf'\b{re.escape(name)}\b' for name in [team_name_lower] + aliases]
                 
-                # Check scoring team
-                if re.search(team_pattern, scoring_team):
-                    pl_team_found = True
-                    scoring_team_data = {'name': team_name, 'data': team_data}
-                
-                # Check other team
-                if re.search(team_pattern, other_team):
-                    pl_team_found = True
-                    other_team_data = {'name': team_name, 'data': team_data}
-            
-            # Only proceed if at least one Premier League team is involved
-            if pl_team_found:
-                app_logger.info(f"Found Premier League team in match: {scoring_team} vs {other_team}")
-                
-                # Use Premier League team name if available, otherwise use original name
-                final_scoring_team = scoring_team_data['name'] if scoring_team_data else scoring_team.title()
-                final_other_team = other_team_data['name'] if other_team_data else other_team.title()
-                
-                # Use scoring team's color ONLY if they are a PL team, otherwise use gray
-                color = scoring_team_data['data'].get('color', 0x808080) if scoring_team_data else 0x808080
-                
-                return {
-                    'team': final_scoring_team,
-                    'other_team': final_other_team,
-                    'score': final_score,
-                    'color': color
-                }
-            else:
-                app_logger.info(f"No Premier League team found in match: {scoring_team} vs {other_team}")
-                
-    app_logger.warning(f"No team found in title: {title}")
-    return None
-
-def get_base_domain(url: str) -> str:
-    """Extract the base domain without TLD.
+                # Check scoring team first
+                if any(re.search(pattern, scoring_team) for pattern in team_patterns):
+                    if include_metadata:
+                        return {
+                            'name': team_name,
+                            'data': team_data,
+                            'is_scoring': True
+                        }
+                    return team_name
+                    
+                # Then check other team
+                if any(re.search(pattern, other_team) for pattern in team_patterns):
+                    if include_metadata:
+                        return {
+                            'name': team_name,
+                            'data': team_data,
+                            'is_scoring': False
+                        }
+                    return team_name
     
-    Args:
-        url (str): Full URL
+    # If no score pattern found, try to find any team in the title
+    for team_name, team_data in premier_league_teams.items():
+        team_name_lower = team_name.lower()
+        aliases = [alias.lower() for alias in team_data.get('aliases', [])]
         
-    Returns:
-        str: Base domain name (e.g., 'streamff', 'streamin', 'dubz')
-    """
-    try:
-        # Parse the URL and get the netloc (e.g., 'streamff.com', 'streamin.one')
-        domain = urlparse(url).netloc
-        # Split by dots and get the main part (e.g., 'streamff' from 'streamff.com')
-        base_domain = domain.split('.')[0]
-        return base_domain
-    except Exception as e:
-        app_logger.error(f"Error extracting base domain from {url}: {str(e)}")
-        return ""
+        # Create patterns with word boundaries
+        team_patterns = [rf'\b{re.escape(name)}\b' for name in [team_name_lower] + aliases]
+        
+        if any(re.search(pattern, title_lower) for pattern in team_patterns):
+            if include_metadata:
+                return {
+                    'name': team_name,
+                    'data': team_data,
+                    'is_scoring': None
+                }
+            return team_name
+            
+    return None
 
 async def extract_mp4_link(submission) -> Optional[str]:
     """Extract MP4 link from submission.

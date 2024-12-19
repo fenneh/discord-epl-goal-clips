@@ -17,6 +17,13 @@ DISCORD_AVATAR_URL = os.getenv('DISCORD_AVATAR_URL', 'https://cdn1.rangersnews.u
 # Feature toggle for finding direct MP4 links
 FIND_MP4_LINKS = True
 
+# Allowed domains for goal clips
+ALLOWED_DOMAINS = [
+    'streamff.com',
+    'streamin.me',
+    'dubz.co'
+]
+
 # Base directory for data storage
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(BASE_DIR, 'data')

@@ -10,10 +10,11 @@ from src.services.reddit_service import create_reddit_client, find_team_in_title
 from src.services.discord_service import post_to_discord, post_mp4_link
 from src.services.video_service import video_extractor
 from src.utils.persistence import save_data, load_data
-from src.utils.url_utils import is_valid_domain
+from src.utils.url_utils import is_valid_domain, get_base_domain
 from src.utils.logger import app_logger
 from src.utils.score_utils import is_duplicate_score, cleanup_old_scores
-from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, FIND_MP4_LINKS
+from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, FIND_MP4_LINKS, ALLOWED_DOMAINS
+from src.utils.keywords import GOAL_KEYWORDS, EXCLUDED_TERMS
 import re
 
 @asynccontextmanager
@@ -62,12 +63,14 @@ def contains_goal_keyword(title: str) -> bool:
         if re.search(pattern, title):
             return True
             
-    # Then check for goal keywords
-    for keyword in ['goal', 'score']:
-        if keyword in title_lower:
-            return True
-            
-    return False
+    # Check for goal keywords and emojis
+    goal_indicators = {
+        'goal', 'score', 'scores', 'scored', 'scoring',
+        'strike', 'finish', 'tap in', 'header', 'penalty',
+        'free kick', 'volley', '⚽'  # Added soccer ball emoji
+    }
+    
+    return any(indicator in title_lower for indicator in goal_indicators)
 
 def contains_excluded_term(title: str) -> bool:
     """Check if the post title contains any excluded terms.
@@ -79,8 +82,10 @@ def contains_excluded_term(title: str) -> bool:
         bool: True if title contains excluded terms, False otherwise
     """
     title_lower = title.lower()
-    excluded_terms = ['test', 'example']
-    return any(term in title_lower for term in excluded_terms)
+    
+    # Add word boundaries to prevent partial matches
+    excluded_patterns = [rf'\b{re.escape(term)}\b' for term in EXCLUDED_TERMS]
+    return any(re.search(pattern, title_lower) for pattern in excluded_patterns)
 
 async def extract_mp4_with_retries(submission, max_retries: int = 30, delay: int = 10) -> Optional[str]:
     """Try to extract MP4 link with retries.
@@ -112,38 +117,53 @@ async def extract_mp4_with_retries(submission, max_retries: int = 30, delay: int
     app_logger.warning("Failed to extract MP4 link after all retries")
     return None
 
-async def process_submission(submission, ignore_duplicates: bool = False) -> None:
+async def process_submission(submission, ignore_duplicates: bool = False) -> bool:
     """Process a Reddit submission for goal clips.
     
     Args:
         submission: Reddit submission object
         ignore_duplicates: If True, ignore duplicate scores
+        
+    Returns:
+        bool: True if post should be processed, False otherwise
     """
     try:
         title = submission.title
         url = submission.url
         current_time = datetime.now(timezone.utc)
+        post_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
         
+        # Skip old posts (more than 5 minutes old)
+        if (current_time - post_time) > timedelta(minutes=5):
+            app_logger.debug(f"Skipping old post: {title}")
+            return False
+            
         # Skip if we've already processed this URL
         if url in posted_urls and not ignore_duplicates:
             app_logger.debug(f"Skipping already posted URL: {url}")
-            return
+            return False
             
-        # First check if title contains a Premier League team
-        team_data = find_team_in_title(title)
+        # Skip if title contains excluded terms
+        if contains_excluded_term(title):
+            app_logger.debug(f"Title contains excluded terms: {title}")
+            return False
+            
+        # Check if this is a goal post
+        if not contains_goal_keyword(title):
+            app_logger.debug(f"Not a goal post: {title}")
+            return False
+            
+        # Check if URL domain is allowed
+        base_domain = get_base_domain(url)
+        if base_domain not in ALLOWED_DOMAINS:
+            app_logger.debug(f"URL domain not allowed: {base_domain}")
+            return False
+            
+        # Check if title contains a Premier League team
+        team_data = find_team_in_title(title, include_metadata=True)
         if not team_data:
             app_logger.debug(f"No Premier League team found in title: {title}")
-            return
-            
-        # Now check if this is a goal event (has a score)
-        if not team_data.get('score'):
-            app_logger.debug(f"No score found in title: {title}")
-            return
-            
-        # Skip duplicate scores unless explicitly ignored
-        if not ignore_duplicates and is_duplicate_score(team_data['team'], team_data['score'], current_time):
-            app_logger.info(f"Skipping duplicate score for {team_data['team']}: {team_data['score']}")
-            return
+            return False
             
         # Post initial content to Discord
         content = f"**{title}**\n{url}"
@@ -159,18 +179,11 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
         posted_urls.add(url)
         save_data(posted_urls, POSTED_URLS_FILE)
         
-        # Save score data
-        score_data = {
-            'timestamp': current_time.isoformat(),
-            'url': url,
-            'team': team_data['team'],
-            'score': team_data['score']
-        }
-        posted_scores[title] = score_data
-        save_data(posted_scores, POSTED_SCORES_FILE)
+        return True
         
     except Exception as e:
-        app_logger.error(f"Error processing submission: {str(e)}")
+        app_logger.error(f"Error processing submission: {e}")
+        return False
 
 async def check_new_posts(background_tasks: BackgroundTasks) -> None:
     """Check for new goal posts on Reddit."""

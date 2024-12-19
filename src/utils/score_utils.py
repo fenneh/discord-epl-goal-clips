@@ -102,14 +102,15 @@ def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
         if not name_match:
             return None
             
-        # Clean up the minute (take base minute for 90+2 -> 90)
+        # Clean up the minute
         minute = minute_match.group(1)
-        if '+' in minute:
-            minute = minute.split('+')[0]
+        base_minute = int(minute.split('+')[0]) if '+' in minute else int(minute)
+        injury_time = int(minute.split('+')[1]) if '+' in minute else 0
             
         return {
             'score': score_match.group(1),
-            'minute': minute,
+            'minute': base_minute,
+            'injury_time': injury_time,
             'scorer': normalize_player_name(name_match.group(1).strip())
         }
     except Exception as e:
@@ -191,14 +192,19 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
             if time_diff <= 60:
                 if (current_info['score'] == posted_info['score'] and
                     current_info['minute'] == posted_info['minute'] and
+                    current_info['injury_time'] == posted_info['injury_time'] and
                     current_info['scorer'] == posted_info['scorer']):
                     app_logger.info(f"Found exact score match within 60s: {title}")
                     return True
                     
             # Check for similar minute match within 120s
             elif time_diff <= 120:
+                # Calculate effective minutes (base + injury)
+                current_minute = current_info['minute'] + (current_info['injury_time'] or 0)
+                posted_minute = posted_info['minute'] + (posted_info['injury_time'] or 0)
+                
                 if (current_info['score'] == posted_info['score'] and
-                    abs(current_info['minute'] - posted_info['minute']) <= 1):
+                    abs(current_minute - posted_minute) <= 1):
                     app_logger.info(f"Found similar minute match within 120s: {title}")
                     return True
                     

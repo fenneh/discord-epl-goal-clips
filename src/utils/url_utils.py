@@ -74,3 +74,19 @@ def is_valid_domain(url: str) -> bool:
         return any(base in domain for base in base_domains)
     except ValueError:
         return False
+
+def get_base_domain(url: str) -> str:
+    """Get base domain from URL.
+    
+    Args:
+        url (str): URL to parse
+        
+    Returns:
+        str: Base domain (e.g., 'example.com')
+    """
+    try:
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.lower()
+        return domain.split('www.')[-1]
+    except:
+        return ""
