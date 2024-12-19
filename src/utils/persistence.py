@@ -2,9 +2,26 @@
 
 import pickle
 import os
-import time
-from typing import Set, Dict, Any
+from datetime import datetime
+from typing import Set, Dict, Any, Union
 from src.utils.logger import app_logger
+
+def _convert_to_timestamp(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert datetime objects to ISO format strings in a dictionary.
+    
+    Args:
+        data (dict): Dictionary possibly containing datetime objects
+        
+    Returns:
+        dict: Dictionary with datetime objects converted to ISO format strings
+    """
+    result = {}
+    for key, value in data.items():
+        if isinstance(value, datetime):
+            result[key] = value.isoformat()
+        else:
+            result[key] = value
+    return result
 
 def save_data(data: Any, filename: str) -> None:
     """Save data to a pickle file.
@@ -39,32 +56,7 @@ def load_data(filename: str, default: Any = None) -> Any:
     try:
         with open(filename, 'rb') as f:
             data = pickle.load(f)
-            
-            # Convert any datetime objects to timestamps after loading
-            if isinstance(data, dict):
-                data = {k: _convert_to_timestamp(v) if isinstance(v, dict) else v for k, v in data.items()}
-            
             return data
     except Exception as e:
         app_logger.error(f"Failed to load data from {filename}: {str(e)}")
         return default
-
-def _convert_to_timestamp(data: Dict) -> Dict:
-    """Convert any datetime objects in the data to timestamps.
-    
-    Args:
-        data (dict): Dictionary that might contain datetime objects
-        
-    Returns:
-        dict: Dictionary with datetime objects converted to timestamps
-    """
-    if not isinstance(data, dict):
-        return data
-        
-    result = {}
-    for k, v in data.items():
-        if k == 'timestamp' and hasattr(v, 'timestamp'):
-            result[k] = v.timestamp()
-        else:
-            result[k] = v
-    return result
