@@ -214,23 +214,52 @@ def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> None:
     Args:
         posted_scores (dict): Dictionary mapping titles to timestamps and URLs
     """
-    current_time = datetime.now(timezone.utc)
-    # Create a list of items to remove
-    to_remove = []
-    
-    # First pass: identify items to remove
-    for title, data in list(posted_scores.items()):
-        if 'timestamp' not in data:
-            to_remove.append(title)
-            continue
+    try:
+        app_logger.debug(f"Starting cleanup of old scores: {posted_scores}")
+        current_time = datetime.now(timezone.utc)
+        # Create a list of items to remove
+        to_remove = []
+        
+        # First pass: identify items to remove
+        for title, data in list(posted_scores.items()):
+            app_logger.debug(f"Checking title: {title}, data: {data}")
             
-        try:
-            posted_time = datetime.fromisoformat(data['timestamp'])
-            if (current_time - posted_time).total_seconds() > 300:  # 5 minutes
+            # Handle legacy data where value is a datetime object
+            if isinstance(data, datetime):
+                app_logger.warning(f"Converting legacy data for {title}")
+                posted_scores[title] = {
+                    'timestamp': data.isoformat(),
+                    'url': '',  # No URL for legacy data
+                    'team': '',
+                    'score': ''
+                }
+                continue
+                
+            if not isinstance(data, dict):
+                app_logger.warning(f"Invalid data type for {title}: {type(data)}")
                 to_remove.append(title)
-        except (ValueError, TypeError):
-            to_remove.append(title)
+                continue
+                
+            if 'timestamp' not in data:
+                app_logger.warning(f"No timestamp in data for {title}")
+                to_remove.append(title)
+                continue
+                
+            try:
+                posted_time = datetime.fromisoformat(data['timestamp'])
+                time_diff = (current_time - posted_time).total_seconds()
+                app_logger.debug(f"Time difference for {title}: {time_diff} seconds")
+                if time_diff > 300:  # 5 minutes
+                    app_logger.info(f"Removing old score: {title} (age: {time_diff}s)")
+                    to_remove.append(title)
+            except (ValueError, TypeError) as e:
+                app_logger.error(f"Error parsing timestamp for {title}: {str(e)}")
+                to_remove.append(title)
+                
+        # Second pass: remove identified items
+        for title in to_remove:
+            app_logger.debug(f"Removing title: {title}")
+            posted_scores.pop(title, None)
             
-    # Second pass: remove identified items
-    for title in to_remove:
-        posted_scores.pop(title, None)
+    except Exception as e:
+        app_logger.error(f"Error in cleanup_old_scores: {str(e)}")

@@ -15,13 +15,19 @@ def _convert_to_timestamp(data: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         dict: Dictionary with datetime objects converted to ISO format strings
     """
-    result = {}
-    for key, value in data.items():
-        if isinstance(value, datetime):
-            result[key] = value.isoformat()
-        else:
-            result[key] = value
-    return result
+    try:
+        app_logger.debug(f"Converting data to timestamp: {data}")
+        result = {}
+        for key, value in data.items():
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+                app_logger.debug(f"Converted datetime {value} to {result[key]}")
+            else:
+                result[key] = value
+        return result
+    except Exception as e:
+        app_logger.error(f"Error converting to timestamp: {str(e)}, data: {data}")
+        return data
 
 def save_data(data: Any, filename: str) -> None:
     """Save data to a pickle file.
@@ -31,9 +37,20 @@ def save_data(data: Any, filename: str) -> None:
         filename (str): Name of the file to save to
     """
     try:
+        app_logger.debug(f"Saving data to {filename}: {data}")
         # Convert any datetime objects to timestamps before saving
         if isinstance(data, dict):
-            data = {k: _convert_to_timestamp(v) if isinstance(v, dict) else v for k, v in data.items()}
+            converted_data = {}
+            for k, v in data.items():
+                if isinstance(v, dict):
+                    try:
+                        converted_data[k] = _convert_to_timestamp(v)
+                    except Exception as e:
+                        app_logger.error(f"Error converting inner dict: {str(e)}, key: {k}, value: {v}")
+                        converted_data[k] = v
+                else:
+                    converted_data[k] = v
+            data = converted_data
         
         with open(filename, 'wb') as f:
             pickle.dump(data, f)
@@ -56,6 +73,7 @@ def load_data(filename: str, default: Any = None) -> Any:
     try:
         with open(filename, 'rb') as f:
             data = pickle.load(f)
+            app_logger.debug(f"Loaded data from {filename}: {data}")
             return data
     except Exception as e:
         app_logger.error(f"Failed to load data from {filename}: {str(e)}")

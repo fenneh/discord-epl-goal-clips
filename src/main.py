@@ -124,7 +124,7 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
             return
             
         # Check if title contains a team we're interested in
-        team_data = find_team_in_title(title)
+        team_data = find_team_in_title(title)  # Now synchronous
         if not team_data:
             app_logger.info(f"Skipping non-EPL team post: {title}")
             return
@@ -148,11 +148,14 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
         posted_urls.add(url)
         save_data(posted_urls, POSTED_URLS_FILE)
         
-        # Save score data with timestamp
-        posted_scores[title] = {
+        # Save score data with timestamp and URL
+        score_data = {
             'timestamp': current_time.isoformat(),
-            'url': url
+            'url': url,
+            'team': team_data.get('team', ''),
+            'score': team_data.get('score', '')
         }
+        posted_scores[title] = score_data
         save_data(posted_scores, POSTED_SCORES_FILE)
         
     except Exception as e:

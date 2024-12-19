@@ -26,7 +26,7 @@ def clean_text(text: str) -> str:
     """Clean text to handle unicode characters."""
     return text.encode('ascii', 'ignore').decode('utf-8')
 
-async def find_team_in_title(title: str) -> Optional[Dict]:
+def find_team_in_title(title: str) -> Optional[Dict]:
     """Find the scoring team in a post title based on square brackets.
     
     Args:
@@ -49,37 +49,44 @@ async def find_team_in_title(title: str) -> Optional[Dict]:
         match = re.search(pattern, title_lower)
         if match:
             team1, score1, score2, team2 = match.groups()
-            app_logger.info(f"Found score pattern. Teams: '{team1}' vs '{team2}'")
             
-            # Find the team that scored (the one with brackets)
-            scoring_team = team1 if '[' in title.split('-')[0] else team2
-            app_logger.info(f"Scoring team section: {scoring_team}")
+            # Clean up team names
+            team1 = team1.strip()
+            team2 = team2.strip()
             
-            # Look for the scoring team first
-            for team, data in premier_league_teams.items():
-                for team_name in data["names"]:
-                    team_name_lower = team_name.lower()
-                    if team_name_lower in scoring_team.lower():
-                        app_logger.info(f"Found scoring team: {team}")
-                        return data
+            # Check if either team is in Premier League
+            scoring_team = None
+            other_team = None
+            is_scoring_first = score1 > score2
             
-            # If scoring team not found, check both teams
-            for team, data in premier_league_teams.items():
-                for team_name in data["names"]:
-                    team_name_lower = team_name.lower()
-                    if team_name_lower in team1 or team_name_lower in team2:
-                        app_logger.info(f"Found team: {team}")
-                        return data
-    
-    # If no score pattern found, try simple name matching
-    app_logger.info("No score pattern found, trying simple name matching")
-    for team, data in premier_league_teams.items():
-        for team_name in data["names"]:
-            if team_name.lower() in title_lower:
-                app_logger.info(f"Found team by name: {team}")
-                return data
-    
-    app_logger.info("No team found in title")
+            # Check both teams against Premier League teams
+            for team_name, team_data in premier_league_teams.items():
+                team_name_lower = team_name.lower()
+                aliases = [alias.lower() for alias in team_data.get('aliases', [])]
+                
+                # Check if team1 matches
+                if team_name_lower in team1 or any(alias in team1 for alias in aliases):
+                    if is_scoring_first:
+                        scoring_team = team_data
+                    else:
+                        other_team = team_data
+                        
+                # Check if team2 matches
+                if team_name_lower in team2 or any(alias in team2 for alias in aliases):
+                    if not is_scoring_first:
+                        scoring_team = team_data
+                    else:
+                        other_team = team_data
+                        
+            if scoring_team:
+                app_logger.info(f"Found scoring team: {scoring_team.get('name', 'Unknown')}")
+                return {
+                    'scoring_team': scoring_team,
+                    'other_team': other_team,
+                    'score': f"{score1}-{score2}" if is_scoring_first else f"{score2}-{score1}"
+                }
+                
+    app_logger.info("No Premier League team found in title")
     return None
 
 async def extract_mp4_link(submission) -> Optional[str]:
