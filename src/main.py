@@ -178,7 +178,16 @@ async def check_new_posts(background_tasks: BackgroundTasks) -> None:
         reddit = await create_reddit_client()
         subreddit = await reddit.subreddit('soccer')
         
+        # Only get posts from last 5 minutes
+        cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+        
         async for submission in subreddit.new(limit=200):
+            # Skip posts older than 5 minutes
+            created_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
+            if created_time < cutoff_time:
+                app_logger.debug(f"Skipping old post from {created_time}: {submission.title}")
+                break  # Posts are in chronological order, so we can break
+                
             if background_tasks:
                 background_tasks.add_task(process_submission, submission)
             else:
