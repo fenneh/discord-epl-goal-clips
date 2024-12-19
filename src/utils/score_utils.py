@@ -154,66 +154,55 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
         bool: True if duplicate, False otherwise
     """
     try:
-        # Extract current goal info
+        # Extract goal info from current title
         current_info = extract_goal_info(title)
         if not current_info:
             return False
             
-        # Track if we found a duplicate in any time window
-        is_duplicate = False
-            
-        # Check against recent posts
-        for posted_title, posted_data in list(posted_scores.items()):
-            posted_time = posted_data['timestamp'].replace(tzinfo=timezone.utc)
-            posted_url = posted_data.get('url')
-            
-            time_diff = timestamp - posted_time
-            time_diff_seconds = time_diff.total_seconds()
-            
-            # Skip if too old
-            if time_diff_seconds >= 300:  # 5 minutes
+        for posted_title, data in posted_scores.items():
+            # Skip if no timestamp (shouldn't happen)
+            if 'timestamp' not in data:
                 continue
                 
-            # First check: Exact URL match within 30 seconds
-            if url and posted_url and url == posted_url and time_diff_seconds < 30:
-                app_logger.info(f"Duplicate detected - Exact URL match within 30s: {url}")
-                return True
+            # Parse stored timestamp
+            try:
+                posted_time = datetime.fromisoformat(data['timestamp'])
+            except (ValueError, TypeError):
+                continue
+                
+            # Calculate time difference
+            time_diff = abs((timestamp - posted_time).total_seconds())
             
-            # Extract posted goal info
+            # Skip if too old
+            if time_diff > 120:  # 2 minutes max
+                continue
+                
+            # Check for exact URL match within 30s
+            if time_diff <= 30 and url and data.get('url') == url:
+                app_logger.info(f"Found exact URL match within 30s: {url}")
+                return True
+                
+            # Extract goal info from posted title
             posted_info = extract_goal_info(posted_title)
             if not posted_info:
                 continue
-            
-            # Log potential matches for debugging
-            app_logger.debug(f"Comparing current: {current_info}")
-            app_logger.debug(f"With posted: {posted_info}")
-            app_logger.debug(f"Time difference: {time_diff_seconds}s")
-            
-            # Consider it a duplicate if ANY of these conditions are met:
-            # 1. Exact same score, minute, and normalized scorer within 60 seconds
-            if time_diff_seconds < 60:
-                if (current_info['score'] == posted_info['score'] and 
+                
+            # Check for exact score/minute/scorer match within 60s
+            if time_diff <= 60:
+                if (current_info['score'] == posted_info['score'] and
                     current_info['minute'] == posted_info['minute'] and
                     current_info['scorer'] == posted_info['scorer']):
-                    app_logger.info(f"Duplicate detected - Same score/minute/scorer within 60s")
-                    app_logger.info(f"Scorer match: {current_info['scorer']} == {posted_info['scorer']}")
-                    is_duplicate = True
-                    break  # Stop checking other posts
-                
-            # 2. Same score pattern and similar minute (±1) within 120 seconds
-            # BUT only if the titles are different formats (e.g., "G. Jesus" vs "Gabriel Jesus")
-            elif 60 <= time_diff_seconds < 120:
-                minute_diff = abs(int(current_info['minute']) - int(posted_info['minute']))
-                if (current_info['score'] == posted_info['score'] and 
-                    minute_diff <= 1 and 
-                    current_info['scorer'] == posted_info['scorer'] and
-                    title != posted_title and  # Different title formats
-                    normalize_title(title) != normalize_title(posted_title)):  # Different formats
-                    app_logger.info(f"Duplicate detected - Same score/scorer, similar minute")
-                    is_duplicate = True
-                    break  # Stop checking other posts
-                
-        return is_duplicate
+                    app_logger.info(f"Found exact score match within 60s: {title}")
+                    return True
+                    
+            # Check for similar minute match within 120s
+            elif time_diff <= 120:
+                if (current_info['score'] == posted_info['score'] and
+                    abs(current_info['minute'] - posted_info['minute']) <= 1):
+                    app_logger.info(f"Found similar minute match within 120s: {title}")
+                    return True
+                    
+        return False
         
     except Exception as e:
         app_logger.error(f"Error checking for duplicate score: {str(e)}")
@@ -229,9 +218,15 @@ def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> None:
     to_remove = []
     
     for title, data in posted_scores.items():
-        timestamp = data['timestamp'].replace(tzinfo=timezone.utc)
-        time_diff = current_time - timestamp
-        if time_diff.total_seconds() > 300:  # 5 minutes
+        if 'timestamp' not in data:
+            to_remove.append(title)
+            continue
+            
+        try:
+            posted_time = datetime.fromisoformat(data['timestamp'])
+            if (current_time - posted_time).total_seconds() > 300:  # 5 minutes
+                to_remove.append(title)
+        except (ValueError, TypeError):
             to_remove.append(title)
             
     for title in to_remove:

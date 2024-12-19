@@ -123,39 +123,34 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
             app_logger.info(f"Skipping duplicate score: {title}")
             return
             
-        # Check if URL is from a valid domain
+        # Check if title contains a team we're interested in
+        team_data = find_team_in_title(title)
+        if not team_data:
+            app_logger.info(f"Skipping non-EPL team post: {title}")
+            return
+            
+        # Only check domain and extract MP4 if we've passed all other checks
         if not is_valid_domain(url):
-            app_logger.info(f"Skipping invalid domain: {url}")
+            app_logger.info(f"Skipping unsupported domain: {url}")
             return
             
-        # Find team in title
-        team_data = await find_team_in_title(title)
-        
-        # Post initial score update to Discord
-        content = f"**{title}**\n{url}"
-        app_logger.info(f"Posting score update to Discord: {content}")
-        
-        success = await post_to_discord(content, team_data)
-        if not success:
-            app_logger.error("Failed to post score update to Discord")
-            return
-            
-        app_logger.info("Successfully posted score update to Discord")
-
-        # Start async task to extract MP4
-        app_logger.info("Starting MP4 extraction task...")
+        # Try to get MP4 link
         mp4_link = await extract_mp4_with_retries(submission)
-        
-        if mp4_link:
-            app_logger.info(f"Posting MP4 link to Discord: {mp4_link}")
+        if not mp4_link:
+            app_logger.warning(f"Could not extract MP4 link from {url}")
+            return
+            
+        # Post to Discord
+        if FIND_MP4_LINKS:
+            app_logger.info(f"Found MP4 link: {mp4_link}")
             await post_mp4_link(title, mp4_link, team_data)
 
         posted_urls.add(url)
         save_data(posted_urls, POSTED_URLS_FILE)
         
-        # Save score data with timestamp and URL
+        # Save score data with timestamp
         posted_scores[title] = {
-            'timestamp': current_time,
+            'timestamp': current_time.isoformat(),
             'url': url
         }
         save_data(posted_scores, POSTED_SCORES_FILE)
