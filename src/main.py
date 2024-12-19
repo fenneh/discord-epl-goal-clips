@@ -23,11 +23,17 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
     # Startup
     app_logger.info("Goal bot starting up...")
-    background_tasks = BackgroundTasks()
-    background_tasks.add_task(periodic_check)
+    # Start periodic check task
+    task = asyncio.create_task(periodic_check())
     yield
     # Shutdown
     app_logger.info("Shutting down...")
+    # Cancel periodic check task
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 app = FastAPI(lifespan=lifespan)
 
