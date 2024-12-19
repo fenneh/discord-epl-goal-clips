@@ -215,9 +215,11 @@ def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> None:
         posted_scores (dict): Dictionary mapping titles to timestamps and URLs
     """
     current_time = datetime.now(timezone.utc)
+    # Create a list of items to remove
     to_remove = []
     
-    for title, data in posted_scores.items():
+    # First pass: identify items to remove
+    for title, data in list(posted_scores.items()):
         if 'timestamp' not in data:
             to_remove.append(title)
             continue
@@ -229,5 +231,6 @@ def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> None:
         except (ValueError, TypeError):
             to_remove.append(title)
             
+    # Second pass: remove identified items
     for title in to_remove:
-        del posted_scores[title]
+        posted_scores.pop(title, None)
