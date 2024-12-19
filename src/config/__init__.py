@@ -17,6 +17,15 @@ DISCORD_AVATAR_URL = os.getenv('DISCORD_AVATAR_URL', 'https://cdn1.rangersnews.u
 # Feature toggle for finding direct MP4 links
 FIND_MP4_LINKS = True
 
+# Base directory for data storage
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+LOG_DIR = os.path.join(BASE_DIR, 'logs')
+
+# Create directories if they don't exist
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
+
 # File paths for persistence
-POSTED_URLS_FILE = 'posted_urls.pkl'
-POSTED_SCORES_FILE = 'posted_scores.pkl'
+POSTED_URLS_FILE = os.path.join(DATA_DIR, 'posted_urls.pkl')
+POSTED_SCORES_FILE = os.path.join(DATA_DIR, 'posted_scores.pkl')

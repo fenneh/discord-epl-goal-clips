@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
+from src.config import LOG_DIR
 
 def setup_logger(name, log_file, level=logging.INFO, max_bytes=10*1024*1024, backup_count=5):
     """Set up a logger with file and console handlers.
@@ -19,7 +20,7 @@ def setup_logger(name, log_file, level=logging.INFO, max_bytes=10*1024*1024, bac
         logging.Logger: Configured logger instance
     """
     # Create logs directory if it doesn't exist
-    os.makedirs('logs', exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
     
     # Create logger
     logger = logging.getLogger(name)
@@ -33,9 +34,10 @@ def setup_logger(name, log_file, level=logging.INFO, max_bytes=10*1024*1024, bac
         '%(levelname)s - %(message)s'
     )
     
-    # Create file handler
+    # Create file handler with absolute path
+    log_path = os.path.join(LOG_DIR, log_file)
     file_handler = RotatingFileHandler(
-        f'logs/{log_file}',
+        log_path,
         maxBytes=max_bytes,
         backupCount=backup_count,
         encoding='utf-8'
@@ -58,4 +60,4 @@ def setup_logger(name, log_file, level=logging.INFO, max_bytes=10*1024*1024, bac
 app_logger = setup_logger('goal_bot', 'goal_bot.log')
 
 # Create webhook logger for Discord interactions
-webhook_logger = setup_logger('webhook', 'webhook.log')
+webhook_logger = setup_logger('discord_webhook', 'webhook.log')

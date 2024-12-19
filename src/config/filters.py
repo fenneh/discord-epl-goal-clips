@@ -1,29 +1,50 @@
-"""Configuration for post filtering."""
+"""Filter configurations for goal detection."""
 
-# Keywords to identify goal posts
+from src.utils.keywords import GOAL_KEYWORDS, EXCLUDED_TERMS
+
+# Legacy patterns (to be removed)
 goal_keywords = [
-    "goal", 
-    "scores", 
-    "scored", 
-    r"\d{1,3}'",  # Matches minute markers like 45'
-    r"\[\d+\]\s*-\s*\d+",  # Matches [5] - 2
-    r"\d+\s*-\s*\[\d+\]",  # Matches 2 - [5]
+    r'goal',
+    r'score[ds]?',
+    r'strike',
+    r'finish',
+    r'tap in',
+    r'header',
+    r'penalty',
+    r'free kick',
+    r'volley'
 ]
 
-# Terms to exclude from posts (e.g., women's football, youth games)
 excluded_terms = [
-    r'\bW\b',  # Matches standalone W
-    r'\bU19\b',  # Matches U19
+    r'match thread',
+    r'post match',
+    r'pre match',
+    r'match report',
+    r'half time',
+    r'lineup',
+    r'line up',
+    r'team news',
+    r'injury',
+    r'injured',
+    r'transfer',
+    r'signs',
+    r'loan',
+    r'rumour',
+    r'rumor',
+    r'update',
+    r'news',
+    r'official'
 ]
 
-# Specific websites to match URLs
-streamin_domains = [
-    "streamin.one", 
-    "streamin.me", 
-    "streamin.pro", 
-    "streamin.live", 
-    "streamin.cc", 
-    "streamin.xyz"
-]
-
-specific_sites = ["streamff.co"] + streamin_domains + ["dubz.link"]
+# Base domains for supported video sites
+base_domains = {
+    'dubz',
+    'streamff',
+    'streamin',
+    'streamable',
+    'streamja',
+    'streamvi',
+    'streamwo',
+    'streamye',
+    'streamgg'
+}

@@ -4,7 +4,6 @@ import asyncio
 import argparse
 from datetime import datetime, timezone, timedelta
 from typing import Set, Dict, List, Optional
-from fastapi import FastAPI, BackgroundTasks
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks
 from src.services.reddit_service import create_reddit_client, find_team_in_title, extract_mp4_link
@@ -15,7 +14,6 @@ from src.utils.url_utils import is_valid_domain
 from src.utils.logger import app_logger
 from src.utils.score_utils import is_duplicate_score, cleanup_old_scores
 from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, FIND_MP4_LINKS
-from src.config.filters import goal_keywords, excluded_terms, specific_sites
 import re
 
 @asynccontextmanager
@@ -42,22 +40,47 @@ posted_urls: Set[str] = load_data(POSTED_URLS_FILE, set())
 posted_scores: Dict[str, Dict[str, str]] = load_data(POSTED_SCORES_FILE, {})
 
 def contains_goal_keyword(title: str) -> bool:
-    """Check if the post title contains any goal-related keywords or patterns."""
-    for keyword in goal_keywords:
-        if re.search(keyword, title.lower()):
-            app_logger.debug(f"Goal keyword found: '{keyword}' in title: '{title}'")
+    """Check if the post title contains any goal-related keywords or patterns.
+    
+    Args:
+        title (str): Post title to check
+        
+    Returns:
+        bool: True if title contains goal keywords, False otherwise
+    """
+    title_lower = title.lower()
+    
+    # Check for score patterns first
+    score_patterns = [
+        r'\[\d+\]',  # [1]
+        r'\d+\s*-\s*\[\d+\]',  # 0 - [1]
+        r'\[\d+\]\s*-\s*\d+',  # [1] - 0
+        r'\[\d+\s*-\s*\d+\]',  # [1-0]
+    ]
+    
+    for pattern in score_patterns:
+        if re.search(pattern, title):
             return True
-    app_logger.debug(f"No goal keywords found in title: '{title}'")
+            
+    # Then check for goal keywords
+    for keyword in ['goal', 'score']:
+        if keyword in title_lower:
+            return True
+            
     return False
 
 def contains_excluded_term(title: str) -> bool:
-    """Check if the post title contains any excluded terms."""
-    for term in excluded_terms:
-        if re.search(term, title):
-            app_logger.debug(f"Excluded term found: '{term}' in title: '{title}'")
-            return True
-    app_logger.debug(f"No excluded terms found in title: '{title}'")
-    return False
+    """Check if the post title contains any excluded terms.
+    
+    Args:
+        title (str): Post title to check
+        
+    Returns:
+        bool: True if title contains excluded terms, False otherwise
+    """
+    title_lower = title.lower()
+    excluded_terms = ['test', 'example']
+    return any(term in title_lower for term in excluded_terms)
 
 async def extract_mp4_with_retries(submission, max_retries: int = 30, delay: int = 10) -> Optional[str]:
     """Try to extract MP4 link with retries.
@@ -97,63 +120,51 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
         ignore_duplicates: If True, ignore duplicate scores
     """
     try:
+        title = submission.title
+        url = submission.url
         current_time = datetime.now(timezone.utc)
         
-        # Get submission properties
-        title = clean_text(submission.title)  # Clean title before using
-        url = submission.url
-        
-        # Skip if already posted
-        if url in posted_urls:
-            app_logger.info(f"Skipping already posted URL: {url}")
+        # Skip if we've already processed this URL
+        if url in posted_urls and not ignore_duplicates:
+            app_logger.debug(f"Skipping already posted URL: {url}")
             return
             
-        # Skip if it doesn't contain goal keywords
-        if not contains_goal_keyword(title):
-            app_logger.info(f"Skipping non-goal post: {title}")
-            return
-            
-        # Skip if it contains excluded terms
-        if contains_excluded_term(title):
-            app_logger.info(f"Skipping excluded post: {title}")
-            return
-            
-        # Skip if it's a duplicate score unless ignored
-        if not ignore_duplicates and is_duplicate_score(title, posted_scores, current_time, url):
-            app_logger.info(f"Skipping duplicate score: {title}")
-            return
-            
-        # Check if title contains a team we're interested in
-        team_data = find_team_in_title(title)  # Now synchronous
+        # First check if title contains a Premier League team
+        team_data = find_team_in_title(title)
         if not team_data:
-            app_logger.info(f"Skipping non-EPL team post: {title}")
+            app_logger.debug(f"No Premier League team found in title: {title}")
             return
             
-        # Only check domain and extract MP4 if we've passed all other checks
-        if not is_valid_domain(url):
-            app_logger.info(f"Skipping unsupported domain: {url}")
+        # Now check if this is a goal event (has a score)
+        if not team_data.get('score'):
+            app_logger.debug(f"No score found in title: {title}")
             return
             
-        # Try to get MP4 link
-        mp4_link = await extract_mp4_with_retries(submission)
-        if not mp4_link:
-            app_logger.warning(f"Could not extract MP4 link from {url}")
+        # Skip duplicate scores unless explicitly ignored
+        if not ignore_duplicates and is_duplicate_score(team_data['team'], team_data['score'], current_time):
+            app_logger.info(f"Skipping duplicate score for {team_data['team']}: {team_data['score']}")
             return
             
-        # Post to Discord
-        if FIND_MP4_LINKS:
-            app_logger.info(f"Found MP4 link: {mp4_link}")
-            await post_mp4_link(title, mp4_link, team_data)
-
+        # Post initial content to Discord
+        content = f"**{title}**\n{url}"
+        await post_to_discord(content, team_data)
+        
+        # Try to extract MP4 link with retries
+        mp4_url = await extract_mp4_with_retries(submission)
+        if mp4_url:
+            # Send a follow-up with just the MP4 link
+            await post_mp4_link(title, mp4_url, team_data)
+            
+        # Mark URL as processed
         posted_urls.add(url)
         save_data(posted_urls, POSTED_URLS_FILE)
         
-        # Save score data with timestamp and URL
+        # Save score data
         score_data = {
             'timestamp': current_time.isoformat(),
             'url': url,
-            'team': team_data.get('team', ''),
-            'score': team_data.get('score', '')
+            'team': team_data['team'],
+            'score': team_data['score']
         }
         posted_scores[title] = score_data
         save_data(posted_scores, POSTED_SCORES_FILE)
@@ -162,28 +173,21 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
         app_logger.error(f"Error processing submission: {str(e)}")
 
 async def check_new_posts(background_tasks: BackgroundTasks) -> None:
-    """Check for new goal posts on Reddit.
-    
-    Args:
-        background_tasks: FastAPI background tasks
-    """
+    """Check for new goal posts on Reddit."""
     try:
         reddit = await create_reddit_client()
         subreddit = await reddit.subreddit('soccer')
         
-        async for submission in subreddit.new(limit=100):
-            title = submission.title
-            if ('goal' in title.lower() or 
-                'score' in title.lower()):
-                if background_tasks:
-                    background_tasks.add_task(process_submission, submission)
-                else:
-                    await process_submission(submission)
+        async for submission in subreddit.new(limit=200):
+            if background_tasks:
+                background_tasks.add_task(process_submission, submission)
+            else:
+                await process_submission(submission)
                 
     except Exception as e:
         app_logger.error(f"Error checking new posts: {str(e)}")
     finally:
-        await reddit.close()  # Close the Reddit client session
+        await reddit.close()
 
 async def periodic_check():
     """Periodically check for new posts."""
@@ -246,7 +250,7 @@ async def test_specific_threads(thread_ids: List[str], ignore_posted: bool = Fal
     for thread_id in thread_ids:
         try:
             submission = await reddit.submission(thread_id)
-            title = clean_text(submission.title)  # Clean title before logging
+            title = submission.title
             app_logger.info(f"\nProcessing thread: {title}")
             app_logger.info(f"URL: {submission.url}")
             

@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, Optional
 from src.config import DISCORD_WEBHOOK_URL, DISCORD_USERNAME, DISCORD_AVATAR_URL
+from src.config.teams import premier_league_teams
 from src.utils.logger import webhook_logger
 
 def clean_text(text: str) -> str:
@@ -50,10 +51,12 @@ async def post_to_discord(
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    # Add team thumbnail if available
-    if team_data and "logo" in team_data:
-        embed["thumbnail"] = {"url": team_data["logo"]}
-        webhook_logger.info(f"Added team logo: {team_data['logo']}")
+    # Add team logo if available
+    if team_data and "team" in team_data and team_data["team"] in premier_league_teams:
+        team_info = premier_league_teams[team_data["team"]]
+        if "logo" in team_info:
+            embed["thumbnail"] = {"url": team_info["logo"]}
+            webhook_logger.info(f"Added team logo: {team_info['logo']}")
 
     # Prepare webhook data
     webhook_data = {
