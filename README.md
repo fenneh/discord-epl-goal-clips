@@ -143,31 +143,24 @@ The bot uses several helper functions for processing:
 
 ## Testing
 
-The bot includes a comprehensive test suite in `test_goal_bot.py` that verifies key functionality:
+The bot includes a comprehensive test suite using pytest. To run the tests:
 
-### Running Tests
-
-Run the test suite using:
 ```sh
-python -m unittest test_goal_bot.py -v
+# Install dev dependencies
+pip install -r requirements-dev.txt
+
+# Run tests
+pytest tests/ -v
 ```
 
-### Test Coverage
-
-The test suite covers:
-
-1. Score Pattern Normalization
-   - Handles abbreviated vs. full player names (e.g., "E. Haaland" vs "Erling Haaland")
-   - Normalizes case and whitespace
-   - Processes different score formats (home/away team scoring)
-
-2. Duplicate Detection
-   - Validates same goal with different player name formats
-   - Ensures different goals are not marked as duplicates
-   - Checks goals with same minute but different scores
-   - Verifies goals with same teams but different scorers
-
-### Test Cases
+The test suite includes:
+- Score matching and normalization
+- Duplicate detection with time windows:
+  - 0-30s: Exact URL matches
+  - 0-60s: Exact score/minute/scorer matches
+  - 60-120s: Similar minute matches for different formats
+- Domain validation and extraction
+- MP4 URL extraction from various video hosts
 
 Example test scenarios:
 ```python
@@ -175,34 +168,24 @@ Example test scenarios:
 "Crystal Palace 1 - [1] Manchester City - E. Haaland 30'"
 "Crystal Palace 1 - [1] Manchester City - Erling Haaland 30'"
 
+# Same goal, different minute formats (should be duplicate within 60s)
+"Arsenal [3] - 1 Crystal Palace - Gabriel Jesus 81'"
+"Arsenal [3] - 1 Crystal Palace - G. Jesus 81'"
+
 # Different goals (should not be duplicate)
-"Crystal Palace 1 - [1] Manchester City - E. Haaland 30'"
-"Crystal Palace [2] - 1 Manchester City - M. Lacroix 56'"
+"Arsenal [2] - 1 Crystal Palace - Saka 45'"
+"Arsenal [3] - 1 Crystal Palace - Jesus 81'"
 ```
 
-Each test case uses isolated state to ensure consistent results, and includes detailed logging for debugging.
+## Recent Changes
 
-## Test Scripts
-
-The repository includes test scripts for validating URL processing:
-
-1. PowerShell script (Windows):
-    ```powershell
-    .\test_urls.ps1
-    ```
-
-2. Bash script (Linux/Mac):
-    ```bash
-    ./test_urls.sh
-    ```
-
-These scripts allow you to test multiple Reddit thread URLs sequentially, with the following features:
-- Colorized output for better readability
-- Pauses between URLs for result review
-- Ignores previously posted URLs and duplicates
-- Easy to update with new test URLs
-
-To add new test URLs, edit the `urls` array at the top of the script with the Reddit thread IDs.
+### 2024-12-19
+- Enhanced duplicate detection with time windows
+- Improved player name normalization
+- Added comprehensive test suite
+- Organized test files into dedicated directory
+- Added pytest-asyncio for async test support
+- Fixed domain extraction and validation
 
 ## Contributing
 

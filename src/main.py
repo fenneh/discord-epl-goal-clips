@@ -33,7 +33,7 @@ app = FastAPI(lifespan=lifespan)
 
 # Load previously posted URLs and scores
 posted_urls: Set[str] = load_data(POSTED_URLS_FILE, set())
-posted_scores: Dict[str, datetime] = load_data(POSTED_SCORES_FILE, {})
+posted_scores: Dict[str, Dict[str, str]] = load_data(POSTED_SCORES_FILE, {})
 
 def contains_goal_keyword(title: str) -> bool:
     """Check if the post title contains any goal-related keywords or patterns."""
@@ -113,7 +113,7 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
             return
             
         # Skip if it's a duplicate score unless ignored
-        if not ignore_duplicates and is_duplicate_score(title, posted_scores, current_time):
+        if not ignore_duplicates and is_duplicate_score(title, posted_scores, current_time, url):
             app_logger.info(f"Skipping duplicate score: {title}")
             return
             
@@ -147,8 +147,11 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> Non
         posted_urls.add(url)
         save_data(posted_urls, POSTED_URLS_FILE)
         
-        # Save score data - just store the timestamp directly
-        posted_scores[title] = current_time
+        # Save score data with timestamp and URL
+        posted_scores[title] = {
+            'timestamp': current_time,
+            'url': url
+        }
         save_data(posted_scores, POSTED_SCORES_FILE)
         
     except Exception as e:
