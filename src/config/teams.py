@@ -82,7 +82,7 @@ premier_league_teams = {
     },
     "Newcastle": {
         "name": "Newcastle United",
-        "aliases": ["Newcastle", "Newcastle United", "The Magpies", "NUFC", "Newcastle Utd"],
+        "aliases": ["Newcastle", "Newcastle Utd", "Newcastle United", "The Magpies", "NUFC"],
         "color": 0x241F20,  # Black
         "logo": "https://resources.premierleague.com/premierleague/badges/t4.png"
     },

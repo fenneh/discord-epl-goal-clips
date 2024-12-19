@@ -40,6 +40,57 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
     if not title:
         return None
         
+    # Clean and lowercase the title
+    title_lower = title.lower()
+    
+    def check_team_match(text: str, team_name: str, team_data: dict) -> Optional[Union[str, Dict[str, Any]]]:
+        """Helper function to check if a team matches in the given text."""
+        team_name_lower = team_name.lower()
+        aliases = [alias.lower() for alias in team_data.get('aliases', [])]
+        
+        # Split text into words for exact matching
+        text_words = text.split()
+        text_phrases = [' '.join(text_words[i:i+4]) for i in range(len(text_words))]  # Check up to 4-word phrases
+        
+        # Create patterns with word boundaries
+        team_patterns = [rf'\b{re.escape(name)}\b' for name in [team_name_lower] + aliases]
+        
+        # Try exact matches first
+        for pattern in team_patterns:
+            for phrase in text_phrases:
+                if re.fullmatch(pattern, phrase):
+                    if include_metadata:
+                        return {
+                            'name': team_name,
+                            'data': team_data,
+                            'is_scoring': None
+                        }
+                    return team_name
+        
+        # If no exact match, try word boundary matches
+        for pattern in team_patterns:
+            if re.search(pattern, text):
+                # Additional check: make sure we don't match part of a longer word/phrase
+                match = re.search(pattern, text)
+                start, end = match.span()
+                
+                # Check character before match (if not at start)
+                if start > 0 and text[start-1].isalnum():
+                    continue
+                    
+                # Check character after match (if not at end)
+                if end < len(text) and text[end].isalnum():
+                    continue
+                    
+                if include_metadata:
+                    return {
+                        'name': team_name,
+                        'data': team_data,
+                        'is_scoring': None
+                    }
+                return team_name
+        return None
+        
     # Look for score patterns first
     score_patterns = [
         r'(.*?)\s*\[(\d+)\]\s*-\s*(\d+)\s*(.*)',  # Team1 [1] - 0 Team2
@@ -47,8 +98,7 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
         r'(.*?)\s*\[(\d+)\s*-\s*(\d+)\]\s*(.*)',  # Team1 [1-0] Team2
     ]
     
-    title_lower = title.lower()
-    
+    # Try score patterns first
     for pattern in score_patterns:
         match = re.search(pattern, title_lower)
         if match:
@@ -61,50 +111,27 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
             scoring_team = team1 if is_team1_scoring else team2
             other_team = team2 if is_team1_scoring else team1
             
-            # Find Premier League team
+            # Check teams in order of scoring
             for team_name, team_data in premier_league_teams.items():
-                team_name_lower = team_name.lower()
-                aliases = [alias.lower() for alias in team_data.get('aliases', [])]
-                
-                # Create patterns with word boundaries
-                team_patterns = [rf'\b{re.escape(name)}\b' for name in [team_name_lower] + aliases]
-                
                 # Check scoring team first
-                if any(re.search(pattern, scoring_team) for pattern in team_patterns):
+                result = check_team_match(scoring_team, team_name, team_data)
+                if result:
                     if include_metadata:
-                        return {
-                            'name': team_name,
-                            'data': team_data,
-                            'is_scoring': True
-                        }
-                    return team_name
-                    
+                        result['is_scoring'] = True
+                    return result
+                
                 # Then check other team
-                if any(re.search(pattern, other_team) for pattern in team_patterns):
+                result = check_team_match(other_team, team_name, team_data)
+                if result:
                     if include_metadata:
-                        return {
-                            'name': team_name,
-                            'data': team_data,
-                            'is_scoring': False
-                        }
-                    return team_name
+                        result['is_scoring'] = False
+                    return result
     
     # If no score pattern found, try to find any team in the title
     for team_name, team_data in premier_league_teams.items():
-        team_name_lower = team_name.lower()
-        aliases = [alias.lower() for alias in team_data.get('aliases', [])]
-        
-        # Create patterns with word boundaries
-        team_patterns = [rf'\b{re.escape(name)}\b' for name in [team_name_lower] + aliases]
-        
-        if any(re.search(pattern, title_lower) for pattern in team_patterns):
-            if include_metadata:
-                return {
-                    'name': team_name,
-                    'data': team_data,
-                    'is_scoring': None
-                }
-            return team_name
+        result = check_team_match(title_lower, team_name, team_data)
+        if result:
+            return result
             
     return None
 
