@@ -172,6 +172,14 @@ async def extract_mp4_link(submission) -> Optional[str]:
                 app_logger.info(f"Reddit video URL: {url}")
                 return url
                 
+        # Handle streamff.live URLs
+        if 'streamff.live' in submission.url:
+            app_logger.info("✓ Streamff.live URL found")
+            mp4_url = video_extractor.extract_from_streamff(submission.url)
+            if mp4_url:
+                app_logger.info(f"✓ Found MP4 URL: {mp4_url}")
+                return mp4_url
+                
         # Use video extractor for supported base domains
         if any(domain in base_domain for domain in base_domains):
             app_logger.info(f"Using video extractor for {base_domain}")

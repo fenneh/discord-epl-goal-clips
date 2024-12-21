@@ -5,6 +5,7 @@ base_domains = [
     'streamja',
     'streamye',
     'streamff',
+    'streamff.live',  # Add explicit streamff.live domain
     'streamable',
     'cdn-cf-east.streamable',
     'cdn-cf-west.streamable',

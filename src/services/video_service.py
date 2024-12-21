@@ -60,8 +60,18 @@ class VideoExtractor:
         """Extract MP4 URL from streamff.live."""
         try:
             app_logger.info(f"Extracting from streamff URL: {url}")
-            video_id = url.split('/')[-1]
+            
+            # Handle both streamff.com and streamff.live URLs
+            if '/v/' in url:
+                video_id = url.split('/v/')[-1]
+            else:
+                video_id = url.split('/')[-1]
+                
+            app_logger.info(f"Extracted video ID: {video_id}")
+            
+            # Try direct MP4 URL
             mp4_url = f"https://ffedge.streamff.com/uploads/{video_id}.mp4"
+            app_logger.info(f"Trying MP4 URL: {mp4_url}")
             
             if self.validate_mp4_url(mp4_url):
                 app_logger.info(f"Found valid MP4 URL: {mp4_url}")

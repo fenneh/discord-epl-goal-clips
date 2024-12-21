@@ -146,6 +146,12 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             app_logger.info(f"[SKIP] Post too old: {age_minutes:.1f} min > {POST_AGE_MINUTES} min limit")
             return False
             
+        # Check if title contains a Premier League team
+        team_data = find_team_in_title(title, include_metadata=True)
+        if not team_data:
+            app_logger.info(f"[SKIP] No Premier League team found: {title}")
+            return False
+            
         # Skip if we've already processed this URL
         if url in posted_urls and not ignore_duplicates:
             app_logger.info(f"[SKIP] URL already processed: {url}")
@@ -176,12 +182,6 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             app_logger.info(f"[SKIP] Domain not allowed: {base_domain}")
             return False
             
-        # Check if title contains a Premier League team
-        team_data = find_team_in_title(title, include_metadata=True)
-        if not team_data:
-            app_logger.info(f"[SKIP] No Premier League team found: {title}")
-            return False
-            
         # Check if this is a duplicate score
         if not ignore_duplicates and is_duplicate_score(title, posted_scores, current_time, url):
             app_logger.info(f"[SKIP] Duplicate score detected")
@@ -192,25 +192,34 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         app_logger.info("-" * 40)
         app_logger.info("[PROCESSING] Valid goal post")
         app_logger.info(f"Title:     {title}")
+        app_logger.info(f"URL:       {url}")
         app_logger.info(f"Teams:     {team_data.get('home', 'Unknown')} vs {team_data.get('away', 'Unknown')}")
         app_logger.info("-" * 40)
         
-        # Post initial content to Discord
-        content = f"**{title}**\n{url}"
+        # Post initial content to Discord with both URLs in embed
+        original_url = submission.url  # Get the original URL directly from submission
+        content = f"{title}\n{original_url}\n{reddit_url}"  # Include both URLs
+        app_logger.info(f"Posting initial content:\n{content}")
         await post_to_discord(content, team_data)
         
         # Store score with Reddit post URL and video URL
         posted_scores[title] = {
             'timestamp': current_time.isoformat(),
-            'url': url,
+            'url': original_url,  # Store original URL
             'reddit_url': reddit_url
         }
+        app_logger.info(f"Stored URLs - Original: {original_url}, Reddit: {reddit_url}")
         
         # Try to extract MP4 link with retries
         mp4_url = await extract_mp4_with_retries(submission)
-        if mp4_url:
-            # Send a follow-up with just the MP4 link
+        app_logger.info(f"Extracted MP4 URL: {mp4_url}")
+        
+        if mp4_url and mp4_url != original_url:  # Only post MP4 if it's different from original URL
+            app_logger.info(f"Posting MP4 URL (different from original)")
+            # Send just the raw MP4 URL
             await post_mp4_link(title, mp4_url, team_data)
+        else:
+            app_logger.info(f"Skipping MP4 post - {'No MP4 URL found' if not mp4_url else 'Same as original URL'}")
             
         # Mark URL as processed
         posted_urls.add(url)
