@@ -79,6 +79,32 @@ def normalize_player_name(name: str) -> str:
     
     return name
 
+def normalize_team_name(name: str) -> str:
+    """Normalize team name by removing common suffixes and prefixes.
+    
+    Args:
+        name (str): Team name to normalize
+        
+    Returns:
+        str: Normalized team name
+    """
+    # Convert to lowercase
+    name = name.lower()
+    
+    # Remove common suffixes and prefixes
+    suffixes = [
+        'united', 'fc', 'football club', 'city', 'town',
+        'hotspur', 'albion', 'wanderers', 'athletic'
+    ]
+    
+    # Create regex pattern for whole word matching
+    pattern = r'\s+(?:' + '|'.join(suffixes) + r')\s*'
+    
+    # Remove all matching suffixes
+    name = re.sub(pattern, '', name, flags=re.IGNORECASE)
+    
+    return name.strip()
+
 def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
     """Extract goal information from title.
     
@@ -106,9 +132,9 @@ def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
         if not teams_match:
             return None
             
-        # Normalize team names by removing "United", "FC", etc.
-        team1 = re.sub(r'\s*(United|FC|Football Club)\s*', '', teams_match.group(1).strip())
-        team2 = re.sub(r'\s*(United|FC|Football Club)\s*', '', teams_match.group(2).strip())
+        # Normalize team names
+        team1 = normalize_team_name(teams_match.group(1).strip())
+        team2 = normalize_team_name(teams_match.group(2).strip())
         
         return {
             'score': score_match.group(1),
@@ -211,9 +237,12 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                     (current_info['team1'] == posted_info['team2'] and current_info['team2'] == posted_info['team1'])
                 )
                 
+                # Compare normalized scorer names
+                scorers_match = (current_scorer == posted_scorer)
+                
                 if (current_info['score'] == posted_info['score'] and
                     current_info['minute'] == posted_info['minute'] and
-                    current_scorer == posted_scorer and
+                    scorers_match and
                     teams_match):
                     app_logger.info("-" * 40)
                     app_logger.info("[DUPLICATE] Exact score match within 60s")
