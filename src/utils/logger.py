@@ -28,10 +28,12 @@ def setup_logger(name, log_file, level=logging.INFO, max_bytes=10*1024*1024, bac
     
     # Create formatters
     file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        '%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
     console_formatter = logging.Formatter(
-        '%(levelname)s - %(message)s'
+        '%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%H:%M:%S'
     )
     
     # Create file handler with absolute path

@@ -77,22 +77,20 @@ class VideoExtractor:
     def extract_from_streamin(self, url: str) -> str:
         """Extract MP4 URL from streamin.one."""
         try:
-            app_logger.info(f"Fetching streamin URL: {url}")
+            # Extract video ID from URL
+            video_id = url.split('/')[-1]
             
-            # Update headers to better mimic a browser
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate',
-                'Referer': 'https://streamin.one/',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1',
-                'Cache-Control': 'max-age=0'
-            }
+            # Construct direct MP4 URL
+            mp4_url = f"https://streamin.fun/uploads/{video_id}.mp4"
+            app_logger.info(f"Constructed MP4 URL: {mp4_url}")
+            
+            # Validate the URL
+            if self.validate_mp4_url(mp4_url):
+                return mp4_url
+                
+            # If direct URL doesn't work, try page parsing
+            headers = {**self.headers, 'Referer': url}
+            app_logger.info(f"Fetching streamin URL: {url}")
             
             app_logger.info("Making request with headers:")
             for k, v in headers.items():

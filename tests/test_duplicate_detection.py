@@ -11,17 +11,14 @@ def test_duplicate_detection():
 
     # Test cases
     test_cases = [
-        # Test case 1: Gabriel Jesus variations
+        # Real example from Villa vs City game
         {
-            "title1": "Arsenal [3] - 1 Crystal Palace - Gabriel Jesus 81'",
-            "title2": "Arsenal [3] - 1 Crystal Palace - G. Jesus 81'",
-            "should_match": True
-        },
-        # Test case 2: Eddie Nketiah variations
-        {
-            "title1": "Arsenal 3 - [2] Crystal Palace - Eddie Nketiah 85'",
-            "title2": "Arsenal 3 - [2] Crystal Palace - E. Nketiah 85'",
-            "should_match": True
+            "title1": "Aston Villa [2] - 0 Manchester City - M. Rogers 65'",
+            "title2": "Aston Villa [2] - 0 Manchester City - Morgan Rogers 65'",
+            "url1": "https://streamin.one/v/njrvnxx0",
+            "url2": "https://streamff.live/v/1021e06e",
+            "should_match": True,
+            "time_diff": 30  # 30 seconds
         }
     ]
 
@@ -33,7 +30,10 @@ def test_duplicate_detection():
         print(f"\nTest Case {i}:")
         print(f"Title 1: {case['title1']}")
         print(f"Title 2: {case['title2']}")
+        print(f"URL 1: {case['url1']}")
+        print(f"URL 2: {case['url2']}")
         print(f"Should Match: {case['should_match']}")
+        print(f"Time Difference: {case.get('time_diff', 30)} seconds")
 
         # Extract goal info for both titles
         info1 = extract_goal_info(case['title1'])
@@ -48,17 +48,17 @@ def test_duplicate_detection():
         posted_scores.clear()
         current_time = base_time
         posted_scores[case['title1']] = {
-            'timestamp': current_time,
-            'url': f'https://example.com/post{i}_1'
+            'timestamp': current_time.isoformat(),
+            'url': case['url1']
         }
 
-        # Try to post title2 30 seconds later
-        current_time = base_time + timedelta(seconds=30)
+        # Try to post title2 after specified time difference
+        current_time = base_time + timedelta(seconds=case.get('time_diff', 30))
         is_duplicate = is_duplicate_score(
             case['title2'], 
             posted_scores, 
             current_time,
-            url=f'https://example.com/post{i}_2'
+            url=case['url2']
         )
 
         print(f"\nResult: {'PASS' if is_duplicate == case['should_match'] else 'FAIL'}")

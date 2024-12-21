@@ -38,7 +38,7 @@ app = FastAPI(lifespan=lifespan)
 
 # Load previously posted URLs and scores
 posted_urls: Set[str] = load_data(POSTED_URLS_FILE, set())
-posted_scores: Set[str] = load_data(POSTED_SCORES_FILE, set())
+posted_scores: Dict[str, Dict[str, str]] = load_data(POSTED_SCORES_FILE, dict())
 
 def contains_goal_keyword(title: str) -> bool:
     """Check if the post title contains any goal-related keywords or patterns.
@@ -132,34 +132,38 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         url = submission.url
         current_time = datetime.now(timezone.utc)
         post_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
+        reddit_url = f"https://reddit.com{submission.permalink}"
         
-        app_logger.info(f"Processing submission: {title}")
-        app_logger.info(f"URL: {url}")
-        app_logger.info(f"Post time: {post_time}")
+        app_logger.info("=" * 80)
+        app_logger.info(f"New Submission: {title}")
+        app_logger.info(f"Video URL:   {url}")
+        app_logger.info(f"Reddit URL:  {reddit_url}")
+        app_logger.info(f"Posted:      {post_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         
         # Skip old posts based on configured age limit
         if (current_time - post_time) > timedelta(minutes=POST_AGE_MINUTES):
-            app_logger.debug(f"Skipping post older than {POST_AGE_MINUTES} minutes: {title}")
+            age_minutes = (current_time - post_time).total_seconds() / 60
+            app_logger.info(f"[SKIP] Post too old: {age_minutes:.1f} min > {POST_AGE_MINUTES} min limit")
             return False
             
         # Skip if we've already processed this URL
         if url in posted_urls and not ignore_duplicates:
-            app_logger.debug(f"Skipping already posted URL: {url}")
+            app_logger.info(f"[SKIP] URL already processed: {url}")
             return False
             
         # Skip if title contains excluded terms
         if contains_excluded_term(title):
-            app_logger.debug(f"Title contains excluded terms: {title}")
+            app_logger.info(f"[SKIP] Contains excluded terms: {title}")
             return False
             
         # Check if this is a goal post
         if not contains_goal_keyword(title):
-            app_logger.debug(f"Not a goal post: {title}")
+            app_logger.info(f"[SKIP] Not a goal post: {title}")
             return False
             
         # Check if URL domain is allowed
         base_domain = get_base_domain(url)
-        app_logger.info(f"URL domain: {base_domain}")
+        app_logger.debug(f"Checking domain: {base_domain}")
         
         # Check if domain contains any of our base domains
         domain_allowed = False
@@ -169,21 +173,38 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
                 break
                 
         if not domain_allowed:
-            app_logger.debug(f"URL domain not allowed: {base_domain}")
+            app_logger.info(f"[SKIP] Domain not allowed: {base_domain}")
             return False
             
         # Check if title contains a Premier League team
         team_data = find_team_in_title(title, include_metadata=True)
         if not team_data:
-            app_logger.debug(f"No Premier League team found in title: {title}")
+            app_logger.info(f"[SKIP] No Premier League team found: {title}")
             return False
             
-        app_logger.info(f"Found valid goal post: {title}")
-        app_logger.info(f"Team data: {team_data}")
+        # Check if this is a duplicate score
+        if not ignore_duplicates and is_duplicate_score(title, posted_scores, current_time, url):
+            app_logger.info(f"[SKIP] Duplicate score detected")
+            app_logger.info(f"Title:      {title}")
+            app_logger.info(f"Reddit URL: {reddit_url}")
+            return False
+            
+        app_logger.info("-" * 40)
+        app_logger.info("[PROCESSING] Valid goal post")
+        app_logger.info(f"Title:     {title}")
+        app_logger.info(f"Teams:     {team_data.get('home', 'Unknown')} vs {team_data.get('away', 'Unknown')}")
+        app_logger.info("-" * 40)
         
         # Post initial content to Discord
         content = f"**{title}**\n{url}"
         await post_to_discord(content, team_data)
+        
+        # Store score with Reddit post URL and video URL
+        posted_scores[title] = {
+            'timestamp': current_time.isoformat(),
+            'url': url,
+            'reddit_url': reddit_url
+        }
         
         # Try to extract MP4 link with retries
         mp4_url = await extract_mp4_with_retries(submission)
@@ -194,6 +215,7 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         # Mark URL as processed
         posted_urls.add(url)
         save_data(posted_urls, POSTED_URLS_FILE)
+        save_data(posted_scores, POSTED_SCORES_FILE)
         
         return True
         

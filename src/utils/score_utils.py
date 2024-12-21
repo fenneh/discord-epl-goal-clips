@@ -180,7 +180,13 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                 
             # Check for exact URL match within 30s
             if time_diff <= 30 and url and data.get('url') == url:
-                app_logger.info(f"Found exact URL match within 30s: {url}")
+                app_logger.info("-" * 40)
+                app_logger.info("[DUPLICATE] Exact URL match within 30s")
+                app_logger.info(f"Original:   {posted_title}")
+                app_logger.info(f"URL:        {data.get('url')}")
+                app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
+                app_logger.info(f"Duplicate:  {title}")
+                app_logger.info("-" * 40)
                 return True
                 
             # Extract goal info from posted title
@@ -190,11 +196,22 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                 
             # Check for exact score/minute/scorer match within 60s
             if time_diff <= 60:
+                # Normalize scorer names for comparison
+                current_scorer = normalize_player_name(current_info['scorer']) if current_info['scorer'] else None
+                posted_scorer = normalize_player_name(posted_info['scorer']) if posted_info['scorer'] else None
+                
                 if (current_info['score'] == posted_info['score'] and
                     current_info['minute'] == posted_info['minute'] and
                     current_info['injury_time'] == posted_info['injury_time'] and
-                    current_info['scorer'] == posted_info['scorer']):
-                    app_logger.info(f"Found exact score match within 60s: {title}")
+                    current_scorer == posted_scorer):
+                    app_logger.info("-" * 40)
+                    app_logger.info("[DUPLICATE] Exact score match within 60s")
+                    app_logger.info(f"Original:   {posted_title}")
+                    app_logger.info(f"URL:        {data.get('url')}")
+                    app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
+                    app_logger.info(f"Duplicate:  {title}")
+                    app_logger.info(f"Scorer:     {posted_scorer} = {current_scorer}")
+                    app_logger.info("-" * 40)
                     return True
                     
             # Check for similar minute match within 120s
@@ -205,7 +222,14 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                 
                 if (current_info['score'] == posted_info['score'] and
                     abs(current_minute - posted_minute) <= 1):
-                    app_logger.info(f"Found similar minute match within 120s: {title}")
+                    app_logger.info("-" * 40)
+                    app_logger.info("[DUPLICATE] Similar minute match within 120s")
+                    app_logger.info(f"Original:   {posted_title}")
+                    app_logger.info(f"URL:        {data.get('url')}")
+                    app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
+                    app_logger.info(f"Duplicate:  {title}")
+                    app_logger.info(f"Minutes:    {posted_minute}' ≈ {current_minute}'")
+                    app_logger.info("-" * 40)
                     return True
                     
         return False

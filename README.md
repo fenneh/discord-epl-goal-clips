@@ -6,41 +6,53 @@ Goal Bot is a Python-based Reddit bot that monitors the r/soccer subreddit for p
 
 - Monitors r/soccer subreddit for new posts
 - Identifies posts containing goal-related keywords and Premier League team names
-- Checks for duplicate scores within a 30-second window
+- Advanced duplicate detection:
+  - Exact URL matches within 30s
+  - Exact score/minute/scorer matches within 60s (handles name variations)
+  - Similar minute matches (±1) within 120s
 - Fetches direct video links from supported sites:
-  - streamff.co
-  - streamin.one
+  - streamff.com / streamff.live
+  - streamin.one / streamin.fun
   - dubz.link
-- Posts updates to a Discord channel with rich embeds
+- Posts updates to Discord:
+  - Direct MP4 links for video files
+  - Rich embeds for regular links with team colors and logos
 - Automatic retry mechanism for failed video extractions
-- Score normalization and duplicate detection
+- Comprehensive logging with status indicators
 - Rate limit monitoring for Reddit API
-- Configurable logging
 - Test modes for development and debugging
 
 ## Requirements
 
-- Python 3.9
-- Docker
+- Python 3.9+
+- Docker (optional)
 
 ## Configuration
 
 The bot can be configured using environment variables in your `.env` file:
 
 ```env
+# Reddit API Configuration
 CLIENT_ID=your_client_id
 CLIENT_SECRET=your_client_secret
 USER_AGENT=your_user_agent
+
+# Discord Configuration
 DISCORD_WEBHOOK_URL=your_discord_webhook_url
 DISCORD_USERNAME=your_webhook_username        # Optional: defaults to 'Ally'
 DISCORD_AVATAR_URL=your_webhook_avatar_url    # Optional: defaults to preset image
+
+# Bot Settings
+POST_AGE_MINUTES=5                           # Optional: defaults to 5
+LOG_LEVEL=INFO                               # Optional: defaults to INFO
 ```
 
 Additional configuration options are available in the code:
-- Goal detection keywords
+- Goal detection keywords and patterns
 - Premier League team names and aliases
 - Supported video hosting sites
 - Score matching patterns
+- Duplicate detection time windows
 
 ## Installation
 
@@ -50,132 +62,67 @@ Additional configuration options are available in the code:
     cd discord-epl-goal-clips
     ```
 
-2. Create a `.env` file with your Reddit API credentials and Discord webhook URL:
-    ```env
-    CLIENT_ID=your_client_id
-    CLIENT_SECRET=your_client_secret
-    USER_AGENT=your_user_agent
-    DISCORD_WEBHOOK_URL=your_discord_webhook_url
-    DISCORD_USERNAME=your_webhook_username        # Optional: defaults to 'Ally'
-    DISCORD_AVATAR_URL=your_webhook_avatar_url    # Optional: defaults to preset image
-    ```
+2. Create a `.env` file with your configuration (see above)
 
 3. Install the required Python packages:
     ```sh
     pip install -r requirements.txt
     ```
 
+4. Install development dependencies (optional):
+    ```sh
+    pip install -r requirements-dev.txt
+    ```
+
 ## Usage
 
 ### Running Locally
 
-1. Load the history of posted URLs and scores:
-    ```python
-    python goal_bot.py
-    ```
-
-2. The bot will start monitoring the r/soccer subreddit and posting updates to Discord.
-
-### Test Modes
-
-The bot includes several test modes for development and debugging:
-
-1. Reprocess historical posts:
-    ```sh
-    python goal_bot.py --test 24  # Reprocess posts from last 24 hours
-    ```
-
-2. Send a single test post:
-    ```sh
-    python goal_bot.py --test-post
-    ```
-
-3. Debug URL processing:
-    ```sh
-    python goal_bot.py --debug-urls  # Test URL extraction without posting to Discord
-    ```
-
-The debug mode performs the following validations:
-- Ensures all URLs start with `https://`
-- Validates URLs with HEAD requests to confirm accessibility
-- Removes URL fragments (e.g., `#t=0.1`) that can cause playback issues
-- Shows detailed logging of URL processing and validation
-
-### URL Processing
-
-The bot supports extracting video URLs from these sources:
-- `streamff.co` -> `https://ffedge.streamff.com/uploads/[id].mp4`
-- `streamin.one` -> `https://streamin.fun/uploads/[id].mp4`
-- `dubz.link` -> `https://cdn.squeelab.com/guest/videos/[id].mp4`
-
-Each URL is validated before posting to ensure:
-1. Complete URL format (https://)
-2. Accessibility (200 status code)
-3. Clean format (no fragments or malformed components)
-
-### Running with Docker
-
-1. Build the Docker image:
-    ```sh
-    docker build -t goal-bot .
-    ```
-
-2. Run the container:
-    ```sh
-    docker run -d --name goal-bot --env-file .env goal-bot
-    ```
-
-## Troubleshooting
-
-Common issues and solutions:
-
-1. **Missing Video Links**: The bot will automatically retry failed video extractions for supported sites.
-2. **Rate Limits**: The bot monitors Reddit API rate limits and logs relevant information.
-3. **Duplicate Posts**: Posts with similar scores within 30 seconds are automatically filtered.
-
-## Development
-
-The bot uses several helper functions for processing:
-- Score normalization and duplicate detection
-- Team name matching with aliases
-- Video URL extraction for supported sites
-- Discord webhook formatting
-
-## Testing
-
-The bot includes a comprehensive test suite using pytest. To run the tests:
-
+Start the bot:
 ```sh
-# Install dev dependencies
-pip install -r requirements-dev.txt
-
-# Run tests
-pytest tests/ -v
+python -m src.main
 ```
 
-The test suite includes:
-- Score matching and normalization
-- Duplicate detection with time windows:
-  - 0-30s: Exact URL matches
-  - 0-60s: Exact score/minute/scorer matches
-  - 60-120s: Similar minute matches for different formats
-- Domain validation and extraction
-- MP4 URL extraction from various video hosts
+The bot will:
+1. Monitor r/soccer for new Premier League goal posts
+2. Extract video links and check for duplicates
+3. Post updates to Discord with direct MP4 links when possible
 
-Example test scenarios:
+### Testing
+
+Run the test suite:
+```sh
+# Windows
+.\run_tests.ps1
+
+# Linux/Mac
+./run_tests.sh
+```
+
+Test specific functionality:
 ```python
-# Same goal, different player name formats (should be duplicate)
-"Crystal Palace 1 - [1] Manchester City - E. Haaland 30'"
-"Crystal Palace 1 - [1] Manchester City - Erling Haaland 30'"
+# Test posts from last X hours
+python -m src.main --test-hours 24
 
-# Same goal, different minute formats (should be duplicate within 60s)
-"Arsenal [3] - 1 Crystal Palace - Gabriel Jesus 81'"
-"Arsenal [3] - 1 Crystal Palace - G. Jesus 81'"
+# Test specific Reddit threads
+python -m src.main --test-threads "abc123,xyz789"
 
-# Different goals (should not be duplicate)
-"Arsenal [2] - 1 Crystal Palace - Saka 45'"
-"Arsenal [3] - 1 Crystal Palace - Jesus 81'"
+# Test with duplicate checking disabled
+python -m src.main --ignore-duplicates
 ```
+
+## Logging
+
+The bot uses structured logging with clear status indicators:
+- `[INFO]` - General information and successful operations
+- `[SKIP]` - Posts that were skipped with reason
+- `[DUPLICATE]` - Detailed duplicate detection information
+
+Logs include:
+- Timestamps
+- Reddit and video URLs
+- Processing status and decisions
+- Duplicate detection details
 
 ## Recent Changes
 
@@ -187,35 +134,34 @@ Example test scenarios:
 - Added pytest-asyncio for async test support
 - Fixed domain extraction and validation
 
+### 2024-12-20
+- Updated README with recent changes and roadmap
+- Improved documentation for configuration and usage
+
+## Future Roadmap
+
+### Planned Features
+1. Support for "miss" posts
+   - Track near misses and big chances
+   - Different Discord channel/formatting
+
+2. Support for red card incidents
+   - Track red cards and second yellows
+   - Different Discord channel/formatting
+
+### Technical Improvements
+1. Improve video host reliability
+2. Add more test coverage
+3. Monitor and improve duplicate detection accuracy
+
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## File Structure
-
-- `goal_bot.py`: Main script for the bot
-- `requirements.txt`: List of required Python packages
-- `Dockerfile`: Docker configuration
-- `build.sh`: Script to build and run the Docker container
-- `.env`: Environment variables for Reddit API credentials and Discord webhook URL
-- `posted_urls.pkl`: Pickle file to store posted URLs
-- `posted_scores.pkl`: Pickle file to store posted scores
-
-## Functions
-
-- `load_history()`: Load the history of posted URLs and scores from disk
-- `save_history()`: Save the history of posted URLs and scores to disk
-- `contains_goal_keyword(title)`: Check if the post title contains any goal-related keywords or patterns
-- `contains_specific_site(url)`: Check if the URL contains any of the specific sites
-- `contains_premier_league_team(title)`: Check if the post title contains any Premier League team names or aliases
-- `get_direct_video_link(url)`: Fetch the direct video link from the page
-- `post_to_discord(message)`: Send a message to the Discord webhook
-- `is_duplicate_score(title, timestamp)`: Check if the same score for the same game is posted within 30 seconds
+3. Make your changes
+4. Run the test suite
+5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
