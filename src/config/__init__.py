@@ -17,6 +17,9 @@ DISCORD_AVATAR_URL = os.getenv('DISCORD_AVATAR_URL', 'https://cdn1.rangersnews.u
 # Feature toggle for finding direct MP4 links
 FIND_MP4_LINKS = True
 
+# Post age cutoff in minutes (default 5 minutes)
+POST_AGE_MINUTES = int(os.getenv('POST_AGE_MINUTES', '5'))
+
 # Allowed domains for goal clips
 ALLOWED_DOMAINS = [
     'streamff.com',

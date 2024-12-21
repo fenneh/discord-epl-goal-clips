@@ -43,17 +43,25 @@ async def post_to_discord(
     webhook_logger.info(f"Preparing Discord message for: {title}")
     webhook_logger.info(f"Team data: {team_data}")
 
+    # Get color from team data
+    color = 0x808080  # Default gray
+    if team_data and "data" in team_data:
+        team_info = team_data["data"]
+        if "color" in team_info:
+            color = team_info["color"]
+            webhook_logger.info(f"Using team color: {color}")
+
     # Create the embed
     embed = {
         "title": f"**{title}**",  # Use both title field and bold formatting
         "description": url if url else '',  # URL in description
-        "color": team_data["color"] if team_data and "color" in team_data else 0x808080,
+        "color": color,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
     # Add team logo if available
-    if team_data and "team" in team_data and team_data["team"] in premier_league_teams:
-        team_info = premier_league_teams[team_data["team"]]
+    if team_data and "data" in team_data:
+        team_info = team_data["data"]
         if "logo" in team_info:
             embed["thumbnail"] = {"url": team_info["logo"]}
             webhook_logger.info(f"Added team logo: {team_info['logo']}")
@@ -96,19 +104,20 @@ async def post_mp4_link(title: str, mp4_url: str, team_data: Dict) -> None:
     """Post MP4 link to Discord."""
     webhook_logger.info(f"Posting MP4 link to Discord: {title}\n{mp4_url}")
     
-    # Post just the MP4 URL without any formatting
+    # Just post the MP4 URL directly for Discord to embed it
     webhook_data = {
         "content": mp4_url,
         "username": DISCORD_USERNAME,
         "avatar_url": DISCORD_AVATAR_URL
     }
     
-    try:
-        async with aiohttp.ClientSession() as session:
+    # Post to Discord
+    async with aiohttp.ClientSession() as session:
+        try:
             async with session.post(DISCORD_WEBHOOK_URL, json=webhook_data) as response:
                 if response.status == 204:
-                    webhook_logger.info("Successfully posted to Discord")
+                    webhook_logger.info("Successfully posted MP4 link to Discord")
                 else:
-                    webhook_logger.error(f"Failed to post to Discord. Status: {response.status}")
-    except Exception as e:
-        webhook_logger.error(f"Error posting to Discord: {str(e)}")
+                    webhook_logger.error(f"Failed to post MP4 link. Status: {response.status}")
+        except Exception as e:
+            webhook_logger.error(f"Error posting MP4 link: {str(e)}")

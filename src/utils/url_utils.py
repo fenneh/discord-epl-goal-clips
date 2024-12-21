@@ -85,8 +85,20 @@ def get_base_domain(url: str) -> str:
         str: Base domain (e.g., 'example.com')
     """
     try:
-        parsed_url = urlparse(url)
-        domain = parsed_url.netloc.lower()
-        return domain.split('www.')[-1]
-    except:
-        return ""
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        
+        # Remove 'www.' prefix if present
+        if domain.startswith('www.'):
+            domain = domain[4:]
+            
+        # Check if domain contains any of our base domains
+        for base_domain in base_domains:
+            if base_domain in domain:
+                return domain
+                
+        # If no match found, return the full domain
+        return domain
+        
+    except Exception as e:
+        return url  # Return original URL if parsing fails

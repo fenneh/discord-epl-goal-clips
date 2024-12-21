@@ -9,7 +9,8 @@ from src.config import CLIENT_ID, CLIENT_SECRET, USER_AGENT
 from src.utils.logger import app_logger
 from src.config.teams import premier_league_teams
 from src.utils.url_utils import get_base_domain
-from src.services.video_service import video_extractor  
+from src.services.video_service import video_extractor
+from src.config.domains import base_domains
 
 async def create_reddit_client() -> asyncpraw.Reddit:
     """Create and return a Reddit client instance.
@@ -20,7 +21,12 @@ async def create_reddit_client() -> asyncpraw.Reddit:
     return asyncpraw.Reddit(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
-        user_agent=USER_AGENT
+        user_agent=USER_AGENT,
+        requestor_kwargs={
+            'timeout': 30  # Increase timeout to 30 seconds
+        },
+        check_for_updates=False,  # Disable update checks
+        read_only=True  # Enable read-only mode since we only need to read
     )
 
 def clean_text(text: str) -> str:
@@ -167,8 +173,7 @@ async def extract_mp4_link(submission) -> Optional[str]:
                 return url
                 
         # Use video extractor for supported base domains
-        supported_domains = {'streamff', 'streamin', 'dubz'}
-        if base_domain in supported_domains:
+        if any(domain in base_domain for domain in base_domains):
             app_logger.info(f"Using video extractor for {base_domain}")
             mp4_url = video_extractor.extract_mp4_url(submission.url)
             if mp4_url:

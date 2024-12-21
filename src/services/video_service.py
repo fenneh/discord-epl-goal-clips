@@ -7,6 +7,7 @@ from src.utils.logger import app_logger
 from src.config.filters import base_domains
 from typing import Optional
 from urllib.parse import urlparse
+import traceback
 
 class VideoExtractor:
     """Video extractor class for handling various video hosting sites."""
@@ -17,28 +18,35 @@ class VideoExtractor:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate',
-            'Referer': 'https://streamin.one/',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Site': 'none',
             'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0'
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'DNT': '1'
         }
 
     def validate_mp4_url(self, url: str) -> bool:
         """Validate that an MP4 URL is complete and accessible."""
         try:
             app_logger.info(f"Validating MP4 URL: {url}")
-            response = requests.head(url, headers=self.headers, allow_redirects=True, timeout=5)
+            response = requests.head(url, headers=self.headers, allow_redirects=True, timeout=10)
+            
+            # Log redirect chain if any
+            if len(response.history) > 0:
+                app_logger.info(f"Followed redirects: {' -> '.join(r.url for r in response.history)} -> {response.url}")
+            
             app_logger.info(f"Got response: {response.status_code} {response.headers.get('Content-Type', '')}")
             
             # Accept any 2xx status code and check content type
             if 200 <= response.status_code < 300:
                 content_type = response.headers.get('Content-Type', '').lower()
-                if 'video' in content_type or 'mp4' in content_type:
-                    app_logger.info(f"Valid MP4 URL found: {url}")
+                if any(t in content_type for t in ['video', 'mp4', 'octet-stream']):
+                    app_logger.info(f"Valid MP4 URL found: {response.url}")
                     return True
                     
             app_logger.warning(f"URL validation failed - Status: {response.status_code}, Content-Type: {response.headers.get('Content-Type')}")
@@ -53,24 +61,13 @@ class VideoExtractor:
         try:
             app_logger.info(f"Extracting from streamff URL: {url}")
             video_id = url.split('/')[-1]
-            if not video_id:
-                app_logger.warning(f"Could not extract video ID from URL: {url}")
-                return None
-                
-            # Try both edge and regular domains
-            domains = [
-                "https://ffedge.streamff.com/uploads",
-                "https://streamff.com/uploads"
-            ]
+            mp4_url = f"https://ffedge.streamff.com/uploads/{video_id}.mp4"
             
-            for domain in domains:
-                mp4_url = f"{domain}/{video_id}.mp4"
-                app_logger.info(f"Trying MP4 URL: {mp4_url}")
-                if self.validate_mp4_url(mp4_url):
-                    app_logger.info(f"Found valid MP4 URL: {mp4_url}")
-                    return mp4_url
-                    
-            app_logger.warning(f"No valid MP4 URL found for video ID: {video_id}")
+            if self.validate_mp4_url(mp4_url):
+                app_logger.info(f"Found valid MP4 URL: {mp4_url}")
+                return mp4_url
+                
+            app_logger.warning("No valid MP4 URL found")
             return None
             
         except Exception as e:
@@ -215,13 +212,16 @@ class VideoExtractor:
 
     def extract_mp4_url(self, url: str) -> Optional[str]:
         """Extract MP4 URL from any supported domain."""
+        app_logger.info(f"Extracting MP4 URL from: {url}")
         domain = urlparse(url).netloc.lower()
+        app_logger.info(f"Domain: {domain}")
         
         # Check if any base domain is in the full domain
         supported = False
         for base in base_domains:
             if base in domain:
                 supported = True
+                app_logger.info(f"Found supported base domain: {base}")
                 break
                 
         if not supported:
@@ -229,12 +229,16 @@ class VideoExtractor:
             return None
             
         if 'streamable' in domain:
+            app_logger.info("Using streamable extractor")
             return self.extract_from_streamable(url)
         elif 'streamin' in domain:  # Handles all streamin variants
+            app_logger.info("Using streamin extractor")
             return self.extract_from_streamin(url)
         elif 'streamff' in domain:  # Handles all streamff variants
+            app_logger.info("Using streamff extractor")
             return self.extract_from_streamff(url)
         elif 'dubz' in domain:
+            app_logger.info("Using dubz extractor")
             return self.extract_from_dubz(url)
             
         app_logger.warning(f"No extractor found for supported domain: {domain}")

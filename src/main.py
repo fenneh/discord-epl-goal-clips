@@ -13,8 +13,8 @@ from src.utils.persistence import save_data, load_data
 from src.utils.url_utils import is_valid_domain, get_base_domain
 from src.utils.logger import app_logger
 from src.utils.score_utils import is_duplicate_score, cleanup_old_scores
-from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, FIND_MP4_LINKS, ALLOWED_DOMAINS
-from src.utils.keywords import GOAL_KEYWORDS, EXCLUDED_TERMS
+from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, FIND_MP4_LINKS, POST_AGE_MINUTES
+from src.config.domains import base_domains
 import re
 
 @asynccontextmanager
@@ -38,7 +38,7 @@ app = FastAPI(lifespan=lifespan)
 
 # Load previously posted URLs and scores
 posted_urls: Set[str] = load_data(POSTED_URLS_FILE, set())
-posted_scores: Dict[str, Dict[str, str]] = load_data(POSTED_SCORES_FILE, {})
+posted_scores: Set[str] = load_data(POSTED_SCORES_FILE, set())
 
 def contains_goal_keyword(title: str) -> bool:
     """Check if the post title contains any goal-related keywords or patterns.
@@ -84,7 +84,7 @@ def contains_excluded_term(title: str) -> bool:
     title_lower = title.lower()
     
     # Add word boundaries to prevent partial matches
-    excluded_patterns = [rf'\b{re.escape(term)}\b' for term in EXCLUDED_TERMS]
+    excluded_patterns = [rf'\b{re.escape(term)}\b' for term in ['test']]
     return any(re.search(pattern, title_lower) for pattern in excluded_patterns)
 
 async def extract_mp4_with_retries(submission, max_retries: int = 30, delay: int = 10) -> Optional[str]:
@@ -133,9 +133,13 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         current_time = datetime.now(timezone.utc)
         post_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
         
-        # Skip old posts (more than 5 minutes old)
-        if (current_time - post_time) > timedelta(minutes=5):
-            app_logger.debug(f"Skipping old post: {title}")
+        app_logger.info(f"Processing submission: {title}")
+        app_logger.info(f"URL: {url}")
+        app_logger.info(f"Post time: {post_time}")
+        
+        # Skip old posts based on configured age limit
+        if (current_time - post_time) > timedelta(minutes=POST_AGE_MINUTES):
+            app_logger.debug(f"Skipping post older than {POST_AGE_MINUTES} minutes: {title}")
             return False
             
         # Skip if we've already processed this URL
@@ -155,7 +159,16 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             
         # Check if URL domain is allowed
         base_domain = get_base_domain(url)
-        if base_domain not in ALLOWED_DOMAINS:
+        app_logger.info(f"URL domain: {base_domain}")
+        
+        # Check if domain contains any of our base domains
+        domain_allowed = False
+        for allowed_domain in base_domains:
+            if allowed_domain in base_domain:
+                domain_allowed = True
+                break
+                
+        if not domain_allowed:
             app_logger.debug(f"URL domain not allowed: {base_domain}")
             return False
             
@@ -165,6 +178,9 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             app_logger.debug(f"No Premier League team found in title: {title}")
             return False
             
+        app_logger.info(f"Found valid goal post: {title}")
+        app_logger.info(f"Team data: {team_data}")
+        
         # Post initial content to Discord
         content = f"**{title}**\n{url}"
         await post_to_discord(content, team_data)
@@ -188,40 +204,74 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
 async def check_new_posts(background_tasks: BackgroundTasks) -> None:
     """Check for new goal posts on Reddit."""
     try:
-        reddit = await create_reddit_client()
-        subreddit = await reddit.subreddit('soccer')
+        app_logger.info("Checking new posts in r/soccer...")
         
-        # Only get posts from last 5 minutes
-        cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+        # Create Reddit client
+        try:
+            reddit = await create_reddit_client()
+            app_logger.info("Successfully created Reddit client")
+        except Exception as e:
+            app_logger.error(f"Failed to create Reddit client: {str(e)}")
+            return
+            
+        # Get subreddit
+        try:
+            subreddit = await reddit.subreddit('soccer')
+            app_logger.info("Successfully got r/soccer subreddit")
+        except Exception as e:
+            app_logger.error(f"Failed to get subreddit: {str(e)}")
+            return
         
-        async for submission in subreddit.new(limit=200):
-            # Skip posts older than 5 minutes
-            created_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
-            if created_time < cutoff_time:
-                app_logger.debug(f"Skipping old post from {created_time}: {submission.title}")
-                break  # Posts are in chronological order, so we can break
+        # Only get posts from configured time window
+        cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=POST_AGE_MINUTES)
+        app_logger.info(f"Looking for posts newer than {cutoff_time}")
+        
+        post_count = 0
+        try:
+            async for submission in subreddit.new(limit=200):
+                # Skip posts older than configured age limit
+                created_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
+                if created_time < cutoff_time:
+                    app_logger.debug(f"Skipping old post from {created_time}: {submission.title}")
+                    break  # Posts are in chronological order, so we can break
                 
-            if background_tasks:
-                background_tasks.add_task(process_submission, submission)
-            else:
-                await process_submission(submission)
-                
+                post_count += 1
+                if background_tasks:
+                    background_tasks.add_task(process_submission, submission)
+                else:
+                    await process_submission(submission)
+                    
+            app_logger.info(f"Found {post_count} posts within the last {POST_AGE_MINUTES} minutes")
+            
+        except Exception as e:
+            app_logger.error(f"Error iterating through posts: {str(e)}")
+            return
+            
     except Exception as e:
-        app_logger.error(f"Error checking new posts: {str(e)}")
-    finally:
-        await reddit.close()
+        app_logger.error(f"Top-level error in check_new_posts: {str(e)}")
+        return
 
 async def periodic_check():
     """Periodically check for new posts."""
+    app_logger.info("Starting periodic check...")
+    
     while True:
         try:
-            app_logger.info("Checking new posts in r/soccer...")
-            await check_new_posts(None)  # Pass None since we're not using background tasks here
-            cleanup_old_scores(posted_scores)  # Cleanup old scores
-            await asyncio.sleep(30)  # Check every 30 seconds
+            # Create a new Reddit client for each iteration
+            reddit = await create_reddit_client()
+            try:
+                await check_new_posts(None)
+            finally:
+                # Always close the Reddit client properly
+                await reddit.close()
+                
+            # Sleep for 30 seconds between checks to avoid rate limits
+            await asyncio.sleep(30)
+            
         except Exception as e:
             app_logger.error(f"Error in periodic check: {str(e)}")
-            await asyncio.sleep(30)  # Still wait before retrying
+            # Sleep for 60 seconds on error before retrying
+            await asyncio.sleep(60)
 
 async def test_past_hours(hours: int = 2) -> None:
     """Test the bot by processing posts from the past X hours.
@@ -324,30 +374,22 @@ if __name__ == "__main__":
     # Configure console encoding for Windows
     import sys
     import codecs
-    if sys.platform == 'win32':
-        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+    sys.stdout = codecs.getwriter('utf8')(sys.stdout.buffer)
     
-    parser = argparse.ArgumentParser(description="Run the goal bot")
-    parser.add_argument(
-        "--test-threads",
-        nargs="+",
-        help="Test specific Reddit thread IDs"
-    )
-    parser.add_argument(
-        "--ignore-posted",
-        action="store_true",
-        help="Ignore whether threads have been posted before"
-    )
-    parser.add_argument(
-        "--ignore-duplicates",
-        action="store_true",
-        help="Ignore duplicate scores when testing"
-    )
+    parser = argparse.ArgumentParser(description='Goal Bot')
+    parser.add_argument('--test-hours', type=int, help='Test posts from the last N hours')
+    parser.add_argument('--test-threads', nargs='+', help='Test specific Reddit thread IDs')
     args = parser.parse_args()
     
-    if args.test_threads:
-        asyncio.run(test_specific_threads(args.test_threads, args.ignore_posted, args.ignore_duplicates))
+    if args.test_hours:
+        asyncio.run(test_past_hours(args.test_hours))
+    elif args.test_threads:
+        asyncio.run(test_specific_threads(args.test_threads, ignore_posted=True))
     else:
+        # Test specific post
+        test_post_id = "1hj95zl"  # Aston Villa 1 0 Manchester City goal
+        asyncio.run(test_specific_threads([test_post_id], ignore_posted=True))
+        
+        # Start the FastAPI app
         import uvicorn
-        uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run(app, host="127.0.0.1", port=8000)
