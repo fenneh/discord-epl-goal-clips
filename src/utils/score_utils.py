@@ -99,20 +99,25 @@ def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
             
         # Extract scorer's name - usually before the minute
         name_match = re.search(r'-\s*([^-]+?)\s*\d+(?:\+\d+)?\s*\'', title)
-        if not name_match:
+        
+        # Extract team names
+        teams_match = re.match(r'([^0-9\[\]]+?)\s*(?:\d+\s*-\s*\[\d+\]|\[\d+\]\s*-\s*\d+)\s*([^-]+?)\s*-', title)
+        
+        if not teams_match:
             return None
             
-        # Clean up the minute
-        minute = minute_match.group(1)
-        base_minute = int(minute.split('+')[0]) if '+' in minute else int(minute)
-        injury_time = int(minute.split('+')[1]) if '+' in minute else 0
-            
+        # Normalize team names by removing "United", "FC", etc.
+        team1 = re.sub(r'\s*(United|FC|Football Club)\s*', '', teams_match.group(1).strip())
+        team2 = re.sub(r'\s*(United|FC|Football Club)\s*', '', teams_match.group(2).strip())
+        
         return {
             'score': score_match.group(1),
-            'minute': base_minute,
-            'injury_time': injury_time,
-            'scorer': normalize_player_name(name_match.group(1).strip())
+            'minute': minute_match.group(1),
+            'scorer': name_match.group(1).strip() if name_match else None,
+            'team1': team1,
+            'team2': team2
         }
+        
     except Exception as e:
         app_logger.error(f"Error extracting goal info: {str(e)}")
         return None
@@ -200,10 +205,16 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                 current_scorer = normalize_player_name(current_info['scorer']) if current_info['scorer'] else None
                 posted_scorer = normalize_player_name(posted_info['scorer']) if posted_info['scorer'] else None
                 
+                # Check if teams match (in either order)
+                teams_match = (
+                    (current_info['team1'] == posted_info['team1'] and current_info['team2'] == posted_info['team2']) or
+                    (current_info['team1'] == posted_info['team2'] and current_info['team2'] == posted_info['team1'])
+                )
+                
                 if (current_info['score'] == posted_info['score'] and
                     current_info['minute'] == posted_info['minute'] and
-                    current_info['injury_time'] == posted_info['injury_time'] and
-                    current_scorer == posted_scorer):
+                    current_scorer == posted_scorer and
+                    teams_match):
                     app_logger.info("-" * 40)
                     app_logger.info("[DUPLICATE] Exact score match within 60s")
                     app_logger.info(f"Original:   {posted_title}")
@@ -211,17 +222,19 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                     app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
                     app_logger.info(f"Duplicate:  {title}")
                     app_logger.info(f"Scorer:     {posted_scorer} = {current_scorer}")
+                    app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
                     app_logger.info("-" * 40)
                     return True
                     
             # Check for similar minute match within 120s
             elif time_diff <= 120:
                 # Calculate effective minutes (base + injury)
-                current_minute = current_info['minute'] + (current_info['injury_time'] or 0)
-                posted_minute = posted_info['minute'] + (posted_info['injury_time'] or 0)
+                current_minute = current_info['minute'].split('+')[0] if '+' in current_info['minute'] else current_info['minute']
+                posted_minute = posted_info['minute'].split('+')[0] if '+' in posted_info['minute'] else posted_info['minute']
                 
                 if (current_info['score'] == posted_info['score'] and
-                    abs(current_minute - posted_minute) <= 1):
+                    abs(int(current_minute) - int(posted_minute)) <= 1 and
+                    teams_match):
                     app_logger.info("-" * 40)
                     app_logger.info("[DUPLICATE] Similar minute match within 120s")
                     app_logger.info(f"Original:   {posted_title}")
@@ -229,6 +242,7 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                     app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
                     app_logger.info(f"Duplicate:  {title}")
                     app_logger.info(f"Minutes:    {posted_minute}' ≈ {current_minute}'")
+                    app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
                     app_logger.info("-" * 40)
                     return True
                     

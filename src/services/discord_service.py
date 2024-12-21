@@ -54,7 +54,7 @@ async def post_to_discord(
     # Create the embed
     embed = {
         "title": f"**{title}**",  # Use both title field and bold formatting
-        "description": url if url else '',  # URL in description
+        "description": f"**{url}**" if url else '**',  # URL in description with bold formatting
         "color": color,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
