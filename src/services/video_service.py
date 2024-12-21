@@ -75,20 +75,26 @@ class VideoExtractor:
             return None
 
     def extract_from_streamin(self, url: str) -> str:
-        """Extract MP4 URL from streamin.one."""
+        """Extract MP4 URL from streamin.one/streamin.me."""
         try:
             # Extract video ID from URL
             video_id = url.split('/')[-1]
             
-            # Construct direct MP4 URL
-            mp4_url = f"https://streamin.fun/uploads/{video_id}.mp4"
-            app_logger.info(f"Constructed MP4 URL: {mp4_url}")
+            # Try different domain variations for MP4
+            mp4_domains = [
+                "https://streamin.fun/uploads/",
+                "https://streamin.me/uploads/"
+            ]
             
-            # Validate the URL
-            if self.validate_mp4_url(mp4_url):
-                return mp4_url
+            for domain in mp4_domains:
+                mp4_url = f"{domain}{video_id}.mp4"
+                app_logger.info(f"Trying MP4 URL: {mp4_url}")
                 
-            # If direct URL doesn't work, try page parsing
+                # Validate the URL
+                if self.validate_mp4_url(mp4_url):
+                    return mp4_url
+                
+            # If direct URLs don't work, try page parsing
             headers = {**self.headers, 'Referer': url}
             app_logger.info(f"Fetching streamin URL: {url}")
             
