@@ -196,6 +196,14 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         app_logger.info(f"Teams:     {team_data.get('home', 'Unknown')} vs {team_data.get('away', 'Unknown')}")
         app_logger.info("-" * 40)
         
+        # Add to posted_scores before posting to Discord
+        posted_scores[title] = {
+            'timestamp': current_time.isoformat(),
+            'url': url,
+            'reddit_url': reddit_url
+        }
+        save_data(posted_scores, POSTED_SCORES_FILE)
+        
         # Post initial content to Discord with both URLs in embed
         original_url = submission.url  # Get the original URL directly from submission
         content = f"{title}\n{original_url}\n{reddit_url}"  # Include both URLs

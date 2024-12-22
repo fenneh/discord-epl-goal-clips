@@ -12,6 +12,15 @@ def test_duplicate_detection():
 
     # Test cases
     test_cases = [
+        # Latest example: Tottenham vs Liverpool - Salah goal (exact same title)
+        {
+            "title1": "Tottenham 1 - [4] Liverpool - Mohamed Salah 54'",
+            "title2": "Tottenham 1 - [4] Liverpool - Mohamed Salah 54'",
+            "url1": "https://streamin.one/v/71a8fc2b",
+            "url2": "https://streamff.live/v/7ade354d",
+            "should_match": True,
+            "time_diff": 180  # 3 minutes
+        },
         # Latest example: Tottenham vs Liverpool - Mac Allister goal
         {
             "title1": "Tottenham 0 - [2] Liverpool - A. Mac Allister 36'",
@@ -99,6 +108,24 @@ def test_duplicate_detection():
             "url2": "https://streamff.live/v/1021e06e",
             "should_match": True,
             "time_diff": 30  # 30 seconds
+        },
+        # Test case for concurrent posts (simulating race condition)
+        {
+            "title1": "Tottenham 1 - [4] Liverpool - Mohamed Salah 54'",
+            "title2": "Tottenham 1 - [4] Liverpool - Mohamed Salah 54'",
+            "url1": "https://streamin.one/v/71a8fc2b",
+            "url2": "https://streamff.live/v/7ade354d",
+            "should_match": True,
+            "time_diff": 5  # Very close together (5 seconds)
+        },
+        # Different goals in same match (control case)
+        {
+            "title1": "Tottenham 1 - [3] Liverpool - Jota 45+4'",
+            "title2": "Tottenham 1 - [4] Liverpool - Salah 54'",
+            "url1": "https://streamin.one/v/abc123",
+            "url2": "https://streamff.live/v/def456",
+            "should_match": False,
+            "time_diff": 180
         }
     ]
 
