@@ -169,18 +169,18 @@ def normalize_title(title: str) -> str:
     return f"{goal_info['score']} - {goal_info['scorer']} {goal_info['minute']}'"
 
 def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], timestamp: datetime, url: Optional[str] = None) -> bool:
-    """Check if the same score for the same game is posted within 5 minutes.
+    """Check if this goal has already been posted.
     
-    The function uses different time windows to determine duplicates:
-    1. 0-30s: Exact URL matches
-    2. 0-60s: Exact score/minute/scorer matches (regardless of URL)
-    3. 60-120s: Similar minute (±1) matches for different formats
+    A goal is considered a duplicate if:
+    1. It has the same teams (in either order)
+    2. It has the same score state
+    3. It occurred at approximately the same minute (±1 minute to account for posting delays)
     
     Args:
         title (str): Post title
         posted_scores (dict): Dictionary mapping titles to timestamps and URLs
-        timestamp (datetime): Current timestamp
-        url (str, optional): URL of the post
+        timestamp (datetime): Current timestamp (used for logging)
+        url (str, optional): URL of the post (used for logging)
         
     Returns:
         bool: True if duplicate, False otherwise
@@ -192,93 +192,46 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
             return False
             
         for posted_title, data in posted_scores.items():
-            # Skip if no timestamp (shouldn't happen)
-            if 'timestamp' not in data:
-                continue
-                
-            # Parse stored timestamp
-            try:
-                posted_time = datetime.fromisoformat(data['timestamp'])
-            except (ValueError, TypeError):
-                continue
-                
-            # Calculate time difference
-            time_diff = abs((timestamp - posted_time).total_seconds())
-            
-            # Skip if too old
-            if time_diff > 120:  # 2 minutes max
-                continue
-                
-            # Check for exact URL match within 30s
-            if time_diff <= 30 and url and data.get('url') == url:
-                app_logger.info("-" * 40)
-                app_logger.info("[DUPLICATE] Exact URL match within 30s")
-                app_logger.info(f"Original:   {posted_title}")
-                app_logger.info(f"URL:        {data.get('url')}")
-                app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
-                app_logger.info(f"Duplicate:  {title}")
-                app_logger.info("-" * 40)
-                return True
-                
             # Extract goal info from posted title
             posted_info = extract_goal_info(posted_title)
             if not posted_info:
                 continue
                 
-            # Check for exact score/minute/scorer match within 60s
-            if time_diff <= 60:
-                # Normalize scorer names for comparison
-                current_scorer = normalize_player_name(current_info['scorer']) if current_info['scorer'] else None
-                posted_scorer = normalize_player_name(posted_info['scorer']) if posted_info['scorer'] else None
+            # Check if teams match (in either order)
+            teams_match = (
+                (current_info['team1'] == posted_info['team1'] and current_info['team2'] == posted_info['team2']) or
+                (current_info['team1'] == posted_info['team2'] and current_info['team2'] == posted_info['team1'])
+            )
+            
+            if not teams_match:
+                continue
                 
-                # Check if teams match (in either order)
-                teams_match = (
-                    (current_info['team1'] == posted_info['team1'] and current_info['team2'] == posted_info['team2']) or
-                    (current_info['team1'] == posted_info['team2'] and current_info['team2'] == posted_info['team1'])
-                )
+            # Check if score state matches
+            if current_info['score'] != posted_info['score']:
+                continue
                 
-                # Compare normalized scorer names
-                scorers_match = (current_scorer == posted_scorer)
+            # Calculate effective minutes (base + injury)
+            current_minute = current_info['minute'].split('+')[0] if '+' in current_info['minute'] else current_info['minute']
+            posted_minute = posted_info['minute'].split('+')[0] if '+' in posted_info['minute'] else posted_info['minute']
+            
+            # Allow ±1 minute variation
+            if abs(int(current_minute) - int(posted_minute)) <= 1:
+                app_logger.info("-" * 40)
+                app_logger.info("[DUPLICATE] Same goal detected")
+                app_logger.info(f"Original:   {posted_title}")
+                app_logger.info(f"URL:        {data.get('url')}")
+                app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
+                app_logger.info(f"Duplicate:  {title}")
+                app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
+                app_logger.info(f"Score:      {current_info['score']}")
+                app_logger.info(f"Minutes:    {posted_minute}' ≈ {current_minute}'")
+                app_logger.info("-" * 40)
+                return True
                 
-                if (current_info['score'] == posted_info['score'] and
-                    current_info['minute'] == posted_info['minute'] and
-                    scorers_match and
-                    teams_match):
-                    app_logger.info("-" * 40)
-                    app_logger.info("[DUPLICATE] Exact score match within 60s")
-                    app_logger.info(f"Original:   {posted_title}")
-                    app_logger.info(f"URL:        {data.get('url')}")
-                    app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
-                    app_logger.info(f"Duplicate:  {title}")
-                    app_logger.info(f"Scorer:     {posted_scorer} = {current_scorer}")
-                    app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
-                    app_logger.info("-" * 40)
-                    return True
-                    
-            # Check for similar minute match within 120s
-            elif time_diff <= 120:
-                # Calculate effective minutes (base + injury)
-                current_minute = current_info['minute'].split('+')[0] if '+' in current_info['minute'] else current_info['minute']
-                posted_minute = posted_info['minute'].split('+')[0] if '+' in posted_info['minute'] else posted_info['minute']
-                
-                if (current_info['score'] == posted_info['score'] and
-                    abs(int(current_minute) - int(posted_minute)) <= 1 and
-                    teams_match):
-                    app_logger.info("-" * 40)
-                    app_logger.info("[DUPLICATE] Similar minute match within 120s")
-                    app_logger.info(f"Original:   {posted_title}")
-                    app_logger.info(f"URL:        {data.get('url')}")
-                    app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
-                    app_logger.info(f"Duplicate:  {title}")
-                    app_logger.info(f"Minutes:    {posted_minute}' ≈ {current_minute}'")
-                    app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
-                    app_logger.info("-" * 40)
-                    return True
-                    
         return False
         
     except Exception as e:
-        app_logger.error(f"Error checking for duplicate score: {str(e)}")
+        app_logger.error(f"Error checking duplicate score: {str(e)}")
         return False
 
 def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> None:

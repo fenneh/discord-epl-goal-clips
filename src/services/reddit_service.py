@@ -118,20 +118,33 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
             other_team = team2 if is_team1_scoring else team1
             
             # Check teams in order of scoring
+            scoring_team_match = None
+            other_team_match = None
+            
             for team_name, team_data in premier_league_teams.items():
                 # Check scoring team first
-                result = check_team_match(scoring_team, team_name, team_data)
-                if result:
-                    if include_metadata:
-                        result['is_scoring'] = True
-                    return result
+                if not scoring_team_match:
+                    result = check_team_match(scoring_team, team_name, team_data)
+                    if result:
+                        scoring_team_match = result
                 
                 # Then check other team
-                result = check_team_match(other_team, team_name, team_data)
-                if result:
-                    if include_metadata:
-                        result['is_scoring'] = False
-                    return result
+                if not other_team_match:
+                    result = check_team_match(other_team, team_name, team_data)
+                    if result:
+                        other_team_match = result
+                
+                # If we found both teams, use the scoring team's data
+                if scoring_team_match:
+                    if include_metadata and isinstance(scoring_team_match, dict):
+                        scoring_team_match['is_scoring'] = True
+                    return scoring_team_match
+            
+            # If we only found the non-scoring team, use that
+            if other_team_match:
+                if include_metadata and isinstance(other_team_match, dict):
+                    other_team_match['is_scoring'] = False
+                return other_team_match
     
     # If no score pattern found, try to find any team in the title
     for team_name, team_data in premier_league_teams.items():
