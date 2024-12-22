@@ -47,6 +47,8 @@ def normalize_player_name(name: str) -> str:
     - "Eddie Nketiah" -> "nketiah"
     - "E. Nketiah" -> "nketiah"
     - "van Dijk" -> "van dijk"
+    - "L. Díaz" -> "diaz"
+    - "Luis Diaz" -> "diaz"
     
     Args:
         name (str): Player name to normalize
@@ -57,13 +59,19 @@ def normalize_player_name(name: str) -> str:
     # Convert to lowercase
     name = name.lower()
     
-    # Remove accents
+    # Remove accents and special characters
     name = ''.join(c for c in unicodedata.normalize('NFKD', name)
                   if not unicodedata.combining(c))
+    
+    # Remove any remaining non-alphanumeric characters except spaces
+    name = re.sub(r'[^a-z0-9\s]', '', name)
     
     # Handle abbreviated first names (e.g., "G. Jesus" -> "jesus")
     if '. ' in name:
         name = name.split('. ')[1]
+    elif len(name.split()) > 1:
+        # For full names, take the last part
+        name = name.split()[-1]
     
     # Special cases for multi-word last names
     multi_word_prefixes = ['van', 'de', 'den', 'der', 'dos', 'el', 'al']
@@ -74,10 +82,8 @@ def normalize_player_name(name: str) -> str:
         for i, word in enumerate(words[:-1]):
             if word in multi_word_prefixes:
                 return ' '.join(words[i:])
-        # Default to last word
-        return words[-1]
     
-    return name
+    return name.strip()
 
 def normalize_team_name(team_name: str) -> str:
     """Normalize team names to handle common variations.
@@ -95,14 +101,11 @@ def normalize_team_name(team_name: str) -> str:
     if name.startswith('the '):
         name = name[4:]
     
-    # Remove common suffixes
-    name = re.sub(r'\s+(fc|football club|united|utd|hotspur|wanderers|&|and|albion|city)(\s+|$)', ' ', name).strip()
-    
-    # Handle special cases and nicknames
+    # Handle special cases and nicknames first
     replacements = {
         'arsenal': ['gunners'],
         'manchester': ['man', 'mufc', 'mcfc'],
-        'tottenham': ['spurs', 'thfc'],
+        'tottenham': ['spurs', 'thfc', 'tottenham hotspur', 'hotspur'],
         'wolves': ['wolverhampton', 'wwfc', 'wanderers'],
         'brighton': ['brighton and hove', 'brighton & hove', 'brighton hove'],
         'crystal': ['palace', 'cpfc', 'crystal palace'],
@@ -114,7 +117,7 @@ def normalize_team_name(team_name: str) -> str:
         'leicester': ['lcfc', 'foxes', 'leicester city']
     }
     
-    # Try to match team name with known variations
+    # Try to match team name with known variations first
     for standard, variations in replacements.items():
         # Check if the name matches the standard form
         if name == standard:
@@ -126,6 +129,9 @@ def normalize_team_name(team_name: str) -> str:
                 re.search(rf'\b{re.escape(var)}\b', name) or 
                 re.search(rf'\b{re.escape(name)}\b', var)):
                 return standard
+    
+    # Remove common suffixes only if no special case was found
+    name = re.sub(r'\s+(fc|football club|united|utd|hotspur|wanderers|&|and|albion|city)(\s+|$)', ' ', name).strip()
             
     return name.strip()
 
@@ -217,16 +223,13 @@ def extract_minutes(minute_str: str) -> int:
 def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], timestamp: datetime, url: Optional[str] = None) -> bool:
     """Check if this goal has already been posted.
     
-    A goal is considered a duplicate if:
-    1. It has the same teams (in either order)
-    2. It has the same score state
-    3. It occurred at approximately the same minute (±2 minutes to account for posting delays and injury time)
-    4. The scorer name is similar (using fuzzy matching)
+    Primary matching criteria:
+    1. EPL team name matches
+    2. Score state matches
+    3. Minute matches (with small tolerance for posting delays)
     
-    Special cases:
-    - A goal at 89' and 90' is considered the same goal (end of regular time)
-    - A goal at 45' and 45+1' is considered the same goal (end of first half)
-    - Penalties are matched regardless of exact wording (penalty/pen/p)
+    Secondary check (only if needed):
+    - Basic scorer name comparison to handle disallowed goals
     
     Args:
         title (str): Post title
@@ -243,87 +246,83 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
         if not current_info:
             return False
             
-        # Normalize current title for fuzzy matching
-        current_normalized = normalize_title(title).lower()
-        
+        # Get the EPL team and score from current goal
+        current_epl_team = None
+        if current_info['team1'] in EPL_TEAMS:
+            current_epl_team = current_info['team1']
+        elif current_info['team2'] in EPL_TEAMS:
+            current_epl_team = current_info['team2']
+            
+        if not current_epl_team:
+            return False
+            
         for posted_title, data in posted_scores.items():
             # Extract goal info from posted title
             posted_info = extract_goal_info(posted_title)
             if not posted_info:
                 continue
                 
-            # Check if teams match (in either order)
-            teams_match = (
-                (current_info['team1'] == posted_info['team1'] and current_info['team2'] == posted_info['team2']) or
-                (current_info['team1'] == posted_info['team2'] and current_info['team2'] == posted_info['team1'])
-            )
-            
-            if not teams_match:
+            # Get the EPL team from posted goal
+            posted_epl_team = None
+            if posted_info['team1'] in EPL_TEAMS:
+                posted_epl_team = posted_info['team1']
+            elif posted_info['team2'] in EPL_TEAMS:
+                posted_epl_team = posted_info['team2']
+                
+            if not posted_epl_team:
+                continue
+                
+            # Check if EPL team matches
+            if current_epl_team != posted_epl_team:
                 continue
                 
             # Check if score state matches
             if current_info['score'] != posted_info['score']:
                 continue
                 
-            # Calculate effective minutes (base + injury)
+            # Calculate effective minutes
             current_minute = extract_minutes(current_info['minute'])
             posted_minute = extract_minutes(posted_info['minute'])
             
-            # Special case: 89' and 90' are considered the same minute (end of regular time)
-            if (current_minute == 89 and posted_minute == 90) or (current_minute == 90 and posted_minute == 89):
-                is_same_minute = True
-            # Special case: 45' and 45+1' are considered the same minute (end of first half)
-            elif (current_minute == 45 and posted_minute in (45, 46)) or (posted_minute == 45 and current_minute in (45, 46)):
-                is_same_minute = True
-            # Regular case: Allow ±2 minute variation
-            else:
-                is_same_minute = abs(current_minute - posted_minute) <= 2
-                
-            if not is_same_minute:
+            # Check if minutes match (with tolerance)
+            minute_diff = abs(current_minute - posted_minute)
+            if minute_diff > 2:  # Allow ±2 minutes for posting delays
                 continue
                 
-            # Check for scorer similarity
-            scorer_match = False
+            # At this point, we have a match on EPL team, score, and minute
+            # Only check scorer if both posts have scorer info
             if current_info['scorer'] and posted_info['scorer']:
                 current_scorer = normalize_player_name(current_info['scorer'])
                 posted_scorer = normalize_player_name(posted_info['scorer'])
                 
-                # Check if either title mentions penalty
-                current_is_pen = any(p in current_normalized for p in ['penalty', 'pen)', '(p)'])
-                posted_is_pen = any(p in posted_title.lower() for p in ['penalty', 'pen)', '(p)'])
+                # Get first letter of first name and first 3 letters of last name
+                def get_name_key(name: str) -> str:
+                    parts = name.split()
+                    if len(parts) == 1:
+                        return parts[0][:3]  # Just use first 3 letters of single name
+                    return f"{parts[0][0]}{parts[-1][:3]}"  # First initial + first 3 of last name
                 
-                # If both are penalties or neither is a penalty, check scorer similarity
-                if current_is_pen == posted_is_pen:
-                    # Use fuzzy matching for scorer names
-                    scorer_similarity = get_similarity_ratio(current_scorer, posted_scorer)
-                    scorer_match = scorer_similarity > 0.8
+                current_key = get_name_key(current_scorer)
+                posted_key = get_name_key(posted_scorer)
                 
-            # If we have matching scorers or one is missing, consider it a match
-            if scorer_match or not (current_info['scorer'] and posted_info['scorer']):
-                app_logger.info("-" * 40)
-                app_logger.info("[DUPLICATE] Same goal detected")
-                app_logger.info(f"Original:   {posted_title}")
-                app_logger.info(f"URL:        {data.get('url')}")
-                app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
-                app_logger.info(f"Duplicate:  {title}")
-                app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
-                app_logger.info(f"Score:      {current_info['score']}")
-                app_logger.info(f"Minutes:    {posted_info['minute']}' ≈ {current_info['minute']}'")
-                app_logger.info("-" * 40)
-                return True
-                
-            # Fallback: Check overall title similarity for edge cases
-            title_similarity = get_similarity_ratio(current_normalized, normalize_title(posted_title).lower())
-            if title_similarity > 0.9:  # Very high similarity threshold
-                app_logger.info("-" * 40)
-                app_logger.info("[DUPLICATE] High title similarity detected")
-                app_logger.info(f"Original:   {posted_title}")
-                app_logger.info(f"URL:        {data.get('url')}")
-                app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
-                app_logger.info(f"Duplicate:  {title}")
-                app_logger.info(f"Similarity: {title_similarity:.2f}")
-                app_logger.info("-" * 40)
-                return True
+                # If scorer keys don't match, this might be a different goal
+                if current_key != posted_key:
+                    continue
+            
+            # We have a match! Log the details
+            app_logger.info("-" * 40)
+            app_logger.info("[DUPLICATE] Same goal detected")
+            app_logger.info(f"EPL Team:   {current_epl_team}")
+            app_logger.info(f"Score:      {current_info['score']}")
+            app_logger.info(f"Minute:     {current_info['minute']}' ≈ {posted_info['minute']}'")
+            if current_info['scorer'] and posted_info['scorer']:
+                app_logger.info(f"Scorer:     {current_info['scorer']} ≈ {posted_info['scorer']}")
+            app_logger.info(f"Original:   {posted_title}")
+            app_logger.info(f"URL:        {data.get('url')}")
+            app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
+            app_logger.info(f"Duplicate:  {title}")
+            app_logger.info("-" * 40)
+            return True
                 
         return False
         

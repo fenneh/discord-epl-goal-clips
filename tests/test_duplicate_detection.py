@@ -12,6 +12,15 @@ def test_duplicate_detection():
 
     # Test cases
     test_cases = [
+        # Latest example: Tottenham vs Liverpool
+        {
+            "title1": "Tottenham 0 - [1] Liverpool - L. Díaz 23'",
+            "title2": "Tottenham Hotspur 0 - [1] Liverpool - Luis Diaz 23'",
+            "url1": "https://streamin.one/v/8agczve2",
+            "url2": "https://streamff.live/v/5fad2aa5",
+            "should_match": True,
+            "time_diff": 180  # 3 minutes
+        },
         # Real example from Villa vs City game
         {
             "title1": "Aston Villa [2] - 0 Manchester City - M. Rogers 65'",
