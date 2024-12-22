@@ -221,10 +221,12 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
     1. It has the same teams (in either order)
     2. It has the same score state
     3. It occurred at approximately the same minute (±2 minutes to account for posting delays and injury time)
+    4. The scorer name is similar (using fuzzy matching)
     
     Special cases:
     - A goal at 89' and 90' is considered the same goal (end of regular time)
     - A goal at 45' and 45+1' is considered the same goal (end of first half)
+    - Penalties are matched regardless of exact wording (penalty/pen/p)
     
     Args:
         title (str): Post title
@@ -241,6 +243,9 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
         if not current_info:
             return False
             
+        # Normalize current title for fuzzy matching
+        current_normalized = normalize_title(title).lower()
+        
         for posted_title, data in posted_scores.items():
             # Extract goal info from posted title
             posted_info = extract_goal_info(posted_title)
@@ -274,7 +279,27 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
             else:
                 is_same_minute = abs(current_minute - posted_minute) <= 2
                 
-            if is_same_minute:
+            if not is_same_minute:
+                continue
+                
+            # Check for scorer similarity
+            scorer_match = False
+            if current_info['scorer'] and posted_info['scorer']:
+                current_scorer = normalize_player_name(current_info['scorer'])
+                posted_scorer = normalize_player_name(posted_info['scorer'])
+                
+                # Check if either title mentions penalty
+                current_is_pen = any(p in current_normalized for p in ['penalty', 'pen)', '(p)'])
+                posted_is_pen = any(p in posted_title.lower() for p in ['penalty', 'pen)', '(p)'])
+                
+                # If both are penalties or neither is a penalty, check scorer similarity
+                if current_is_pen == posted_is_pen:
+                    # Use fuzzy matching for scorer names
+                    scorer_similarity = get_similarity_ratio(current_scorer, posted_scorer)
+                    scorer_match = scorer_similarity > 0.8
+                
+            # If we have matching scorers or one is missing, consider it a match
+            if scorer_match or not (current_info['scorer'] and posted_info['scorer']):
                 app_logger.info("-" * 40)
                 app_logger.info("[DUPLICATE] Same goal detected")
                 app_logger.info(f"Original:   {posted_title}")
@@ -284,6 +309,19 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                 app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
                 app_logger.info(f"Score:      {current_info['score']}")
                 app_logger.info(f"Minutes:    {posted_info['minute']}' ≈ {current_info['minute']}'")
+                app_logger.info("-" * 40)
+                return True
+                
+            # Fallback: Check overall title similarity for edge cases
+            title_similarity = get_similarity_ratio(current_normalized, normalize_title(posted_title).lower())
+            if title_similarity > 0.9:  # Very high similarity threshold
+                app_logger.info("-" * 40)
+                app_logger.info("[DUPLICATE] High title similarity detected")
+                app_logger.info(f"Original:   {posted_title}")
+                app_logger.info(f"URL:        {data.get('url')}")
+                app_logger.info(f"Reddit URL: {data.get('reddit_url', 'Unknown')}")
+                app_logger.info(f"Duplicate:  {title}")
+                app_logger.info(f"Similarity: {title_similarity:.2f}")
                 app_logger.info("-" * 40)
                 return True
                 
