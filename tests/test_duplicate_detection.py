@@ -47,6 +47,14 @@ def test_duplicate_detection():
             "url2": "https://streamin.one/v/9740dc7b",
             "should_match": False,
             "time_diff": 30
+        },
+        {
+            "title1": "Manchester Utd 0 - [1] Bournemouth - Dean Huijsen 29'",
+            "title2": "Manchester United 0 - [1] Bournemouth - Dean Huijsen 29'",
+            "url1": "https://streamin.one/v/njrvnxx0",
+            "url2": "https://streamff.live/v/1021e06e",
+            "should_match": True,
+            "time_diff": 30  # 30 seconds
         }
     ]
 

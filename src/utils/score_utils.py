@@ -93,17 +93,21 @@ def normalize_team_name(name: str) -> str:
     
     # Remove common suffixes and prefixes
     suffixes = [
-        'united', 'fc', 'football club', 'city', 'town',
+        'united', 'utd', 'fc', 'football club', 'city', 'town',
         'hotspur', 'albion', 'wanderers', 'athletic'
     ]
     
-    # Create regex pattern for whole word matching
-    pattern = r'\s+(?:' + '|'.join(suffixes) + r')\s*'
+    # Create regex pattern for whole word matching with optional spaces
+    pattern = r'\s*(?:' + '|'.join(suffixes) + r')\s*'
     
-    # Remove all matching suffixes
-    name = re.sub(pattern, '', name, flags=re.IGNORECASE)
+    # Remove suffixes
+    name = re.sub(pattern, '', name).strip()
     
-    return name.strip()
+    # Special case for "man" -> "manchester"
+    if name.startswith('man '):
+        name = 'manchester' + name[3:]
+    
+    return name
 
 def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
     """Extract goal information from title.
