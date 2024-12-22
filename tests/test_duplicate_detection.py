@@ -12,6 +12,33 @@ def test_duplicate_detection():
 
     # Test cases
     test_cases = [
+        # Latest example: Tottenham vs Liverpool - Mac Allister goal
+        {
+            "title1": "Tottenham 0 - [2] Liverpool - A. Mac Allister 36'",
+            "title2": "Tottenham Hotspur 0 - [2] Liverpool - Alexis Mac Allister 36'",
+            "url1": "https://streamin.one/v/j6n31dhy",
+            "url2": "https://streamff.live/v/6a08006e",
+            "should_match": True,
+            "time_diff": 180  # 3 minutes
+        },
+        # Latest example: Tottenham vs Liverpool - Maddison goal
+        {
+            "title1": "Tottenham [1] - 2 Liverpool - J. Maddison 41'",
+            "title2": "Tottenham Hotspur [1] - 2 Liverpool - James Maddison 41'",
+            "url1": "https://streamin.one/v/c6jrwjf6",
+            "url2": "https://streamff.live/v/1f55e03c",
+            "should_match": True,
+            "time_diff": 180  # 3 minutes
+        },
+        # Control case - Different goals in same match
+        {
+            "title1": "Tottenham 0 - [2] Liverpool - A. Mac Allister 36'",
+            "title2": "Tottenham [1] - 2 Liverpool - J. Maddison 41'",
+            "url1": "https://streamin.one/v/j6n31dhy",
+            "url2": "https://streamin.one/v/c6jrwjf6",
+            "should_match": False,
+            "time_diff": 180
+        },
         # Latest example: Tottenham vs Liverpool
         {
             "title1": "Tottenham 0 - [1] Liverpool - L. Díaz 23'",
