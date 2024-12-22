@@ -79,35 +79,55 @@ def normalize_player_name(name: str) -> str:
     
     return name
 
-def normalize_team_name(name: str) -> str:
-    """Normalize team name by removing common suffixes and prefixes.
+def normalize_team_name(team_name: str) -> str:
+    """Normalize team names to handle common variations.
     
     Args:
-        name (str): Team name to normalize
+        team_name (str): Team name to normalize
         
     Returns:
         str: Normalized team name
     """
-    # Convert to lowercase
-    name = name.lower()
+    # Convert to lowercase for case-insensitive comparison
+    name = team_name.lower()
     
-    # Remove common suffixes and prefixes
-    suffixes = [
-        'united', 'utd', 'fc', 'football club', 'city', 'town',
-        'hotspur', 'albion', 'wanderers', 'athletic'
-    ]
+    # Remove "the" prefix
+    if name.startswith('the '):
+        name = name[4:]
     
-    # Create regex pattern for whole word matching with optional spaces
-    pattern = r'\s*(?:' + '|'.join(suffixes) + r')\s*'
+    # Remove common suffixes
+    name = re.sub(r'\s+(fc|football club|united|utd|hotspur|wanderers|&|and|albion|city)(\s+|$)', ' ', name).strip()
     
-    # Remove suffixes
-    name = re.sub(pattern, '', name).strip()
+    # Handle special cases and nicknames
+    replacements = {
+        'arsenal': ['gunners'],
+        'manchester': ['man', 'mufc', 'mcfc'],
+        'tottenham': ['spurs', 'thfc'],
+        'wolves': ['wolverhampton', 'wwfc', 'wanderers'],
+        'brighton': ['brighton and hove', 'brighton & hove', 'brighton hove'],
+        'crystal': ['palace', 'cpfc', 'crystal palace'],
+        'villa': ['aston', 'aston villa', 'avfc'],
+        'newcastle': ['nufc', 'newcastle upon tyne', 'newcastle united', 'newcastle utd'],
+        'west ham': ['hammers', 'whufc'],
+        'liverpool': ['reds', 'lfc'],
+        'chelsea': ['blues', 'cfc'],
+        'leicester': ['lcfc', 'foxes', 'leicester city']
+    }
     
-    # Special case for "man" -> "manchester"
-    if name.startswith('man '):
-        name = 'manchester' + name[3:]
-    
-    return name
+    # Try to match team name with known variations
+    for standard, variations in replacements.items():
+        # Check if the name matches the standard form
+        if name == standard:
+            return standard
+            
+        # Check if the name matches any of the variations exactly or as a word
+        for var in variations:
+            if (var == name or 
+                re.search(rf'\b{re.escape(var)}\b', name) or 
+                re.search(rf'\b{re.escape(name)}\b', var)):
+                return standard
+            
+    return name.strip()
 
 def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
     """Extract goal information from title.
@@ -130,15 +150,23 @@ def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
         # Extract scorer's name - usually before the minute
         name_match = re.search(r'-\s*([^-]+?)\s*\d+(?:\+\d+)?\s*\'', title)
         
-        # Extract team names
-        teams_match = re.match(r'([^0-9\[\]]+?)\s*(?:\d+\s*-\s*\[\d+\]|\[\d+\]\s*-\s*\d+)\s*([^-]+?)\s*-', title)
-        
-        if not teams_match:
+        # Extract team names - more flexible pattern that handles variations better
+        score_pattern = score_match.group(1)
+        title_parts = title.split(score_pattern)
+        if len(title_parts) != 2:
             return None
             
+        # First part is team1, second part has team2 followed by scorer
+        team1 = title_parts[0].strip()
+        team2_match = re.match(r'\s*([^-]+?)\s*-', title_parts[1])
+        if not team2_match:
+            return None
+            
+        team2 = team2_match.group(1).strip()
+        
         # Normalize team names
-        team1 = normalize_team_name(teams_match.group(1).strip())
-        team2 = normalize_team_name(teams_match.group(2).strip())
+        team1 = normalize_team_name(team1)
+        team2 = normalize_team_name(team2)
         
         return {
             'score': score_match.group(1),
@@ -172,13 +200,31 @@ def normalize_title(title: str) -> str:
     # Reconstruct title in canonical format
     return f"{goal_info['score']} - {goal_info['scorer']} {goal_info['minute']}'"
 
+def extract_minutes(minute_str: str) -> int:
+    """Extract the base minute from a minute string, handling injury time.
+    
+    Args:
+        minute_str (str): Minute string (e.g., "90+2", "45", "45+1")
+        
+    Returns:
+        int: Total minutes
+    """
+    if '+' in minute_str:
+        base, injury = minute_str.split('+')
+        return int(base) + int(injury)
+    return int(minute_str)
+
 def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], timestamp: datetime, url: Optional[str] = None) -> bool:
     """Check if this goal has already been posted.
     
     A goal is considered a duplicate if:
     1. It has the same teams (in either order)
     2. It has the same score state
-    3. It occurred at approximately the same minute (±1 minute to account for posting delays)
+    3. It occurred at approximately the same minute (±2 minutes to account for posting delays and injury time)
+    
+    Special cases:
+    - A goal at 89' and 90' is considered the same goal (end of regular time)
+    - A goal at 45' and 45+1' is considered the same goal (end of first half)
     
     Args:
         title (str): Post title
@@ -215,11 +261,20 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                 continue
                 
             # Calculate effective minutes (base + injury)
-            current_minute = current_info['minute'].split('+')[0] if '+' in current_info['minute'] else current_info['minute']
-            posted_minute = posted_info['minute'].split('+')[0] if '+' in posted_info['minute'] else posted_info['minute']
+            current_minute = extract_minutes(current_info['minute'])
+            posted_minute = extract_minutes(posted_info['minute'])
             
-            # Allow ±1 minute variation
-            if abs(int(current_minute) - int(posted_minute)) <= 1:
+            # Special case: 89' and 90' are considered the same minute (end of regular time)
+            if (current_minute == 89 and posted_minute == 90) or (current_minute == 90 and posted_minute == 89):
+                is_same_minute = True
+            # Special case: 45' and 45+1' are considered the same minute (end of first half)
+            elif (current_minute == 45 and posted_minute in (45, 46)) or (posted_minute == 45 and current_minute in (45, 46)):
+                is_same_minute = True
+            # Regular case: Allow ±2 minute variation
+            else:
+                is_same_minute = abs(current_minute - posted_minute) <= 2
+                
+            if is_same_minute:
                 app_logger.info("-" * 40)
                 app_logger.info("[DUPLICATE] Same goal detected")
                 app_logger.info(f"Original:   {posted_title}")
@@ -228,7 +283,7 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
                 app_logger.info(f"Duplicate:  {title}")
                 app_logger.info(f"Teams:      {current_info['team1']} vs {current_info['team2']}")
                 app_logger.info(f"Score:      {current_info['score']}")
-                app_logger.info(f"Minutes:    {posted_minute}' ≈ {current_minute}'")
+                app_logger.info(f"Minutes:    {posted_info['minute']}' ≈ {current_info['minute']}'")
                 app_logger.info("-" * 40)
                 return True
                 

@@ -55,6 +55,14 @@ def test_duplicate_detection():
             "url2": "https://streamff.live/v/1021e06e",
             "should_match": True,
             "time_diff": 30  # 30 seconds
+        },
+        {
+            "title1": "Leicester 0 - [2] Wolves - Rodrigo Gomes 36'",
+            "title2": "Leicester City 0 - [2] Wolves - Rodrigo Gomes 36'",
+            "url1": "https://streamin.one/v/njrvnxx0",
+            "url2": "https://streamff.live/v/1021e06e",
+            "should_match": True,
+            "time_diff": 30  # 30 seconds
         }
     ]
 
