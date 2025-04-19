@@ -12,7 +12,7 @@ from src.services.video_service import video_extractor
 from src.utils.persistence import save_data, load_data
 from src.utils.url_utils import is_valid_domain, get_base_domain
 from src.utils.logger import app_logger
-from src.utils.score_utils import is_duplicate_score, cleanup_old_scores
+from src.utils.score_utils import is_duplicate_score, cleanup_old_scores, extract_goal_info, generate_canonical_key
 from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, FIND_MP4_LINKS, POST_AGE_MINUTES
 from src.config.domains import base_domains
 import re
@@ -182,41 +182,80 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             app_logger.info(f"[SKIP] Domain not allowed: {base_domain}")
             return False
             
-        # Check if this is a duplicate score
-        if not ignore_duplicates and is_duplicate_score(title, posted_scores, current_time, url):
-            app_logger.info(f"[SKIP] Duplicate score detected")
-            app_logger.info(f"Title:      {title}")
-            app_logger.info(f"Reddit URL: {reddit_url}")
-            return False
+        # Extract goal info and generate canonical key first
+        current_info = extract_goal_info(title)
+        if not current_info:
+            # If goal info can't be extracted, we can't reliably check for duplicates or store by key.
+            # Option 1: Skip the post entirely
+            # app_logger.warning(f"[SKIP] Could not extract goal info: {title}")
+            # return False 
+            # Option 2: Log warning and proceed without duplicate check/keyed storage (riskier)
+            app_logger.warning(f"[PROCESS-WARN] Could not extract goal info for duplicate check/keying: {title}. Proceeding with caution.")
+            canonical_key = None # Ensure key is None
+        else:
+            canonical_key = generate_canonical_key(current_info)
+            if not canonical_key:
+                app_logger.warning(f"[PROCESS-WARN] Could not generate canonical key for: {title}. Proceeding with caution.")
+                # Still proceed, but won't be stored/checked by key
+            elif not ignore_duplicates:
+                 # Check if this is a duplicate score using the canonical key
+                 if is_duplicate_score(title, posted_scores, current_time, url): # is_duplicate_score now uses the key internally
+                     app_logger.info(f"[SKIP] Duplicate score detected based on canonical key.")
+                     app_logger.info(f"Title:      {title}")
+                     app_logger.info(f"Reddit URL: {reddit_url}")
+                     return False
+        # --- End Refactored Duplicate Check ---
+            
+        # Check if this is a duplicate score (OLD LOGIC - REMOVE/COMMENT OUT)
+        # if not ignore_duplicates and is_duplicate_score(title, posted_scores, current_time, url):
+        #     app_logger.info(f"[SKIP] Duplicate score detected")
+        #     app_logger.info(f"Title:      {title}")
+        #     app_logger.info(f"Reddit URL: {reddit_url}")
+        #     return False
             
         app_logger.info("-" * 40)
         app_logger.info("[PROCESSING] Valid goal post")
         app_logger.info(f"Title:     {title}")
         app_logger.info(f"URL:       {url}")
-        app_logger.info(f"Teams:     {team_data.get('home', 'Unknown')} vs {team_data.get('away', 'Unknown')}")
+        app_logger.info(f"Teams:     {team_data.get('name', 'Unknown Team Found')} (Scoring: {team_data.get('is_scoring', 'N/A')})") # Log matched team and scoring status
         app_logger.info("-" * 40)
-        
-        # Add to posted_scores before posting to Discord
-        posted_scores[title] = {
-            'timestamp': current_time.isoformat(),
-            'url': url,
-            'reddit_url': reddit_url
-        }
-        save_data(posted_scores, POSTED_SCORES_FILE)
         
         # Post initial content to Discord with both URLs in embed
         original_url = submission.url  # Get the original URL directly from submission
         content = f"{title}\n{original_url}\n{reddit_url}"  # Include both URLs
         app_logger.info(f"Posting initial content:\n{content}")
-        await post_to_discord(content, team_data)
+        await post_to_discord(content, team_data) # Pass the full team_data dict
         
-        # Store score with Reddit post URL and video URL
-        posted_scores[title] = {
-            'timestamp': current_time.isoformat(),
-            'url': original_url,  # Store original URL
-            'reddit_url': reddit_url
-        }
-        app_logger.info(f"Stored URLs - Original: {original_url}, Reddit: {reddit_url}")
+        # Store score with Reddit post URL and video URL, using canonical key if available
+        if canonical_key:
+            posted_scores[canonical_key] = {
+                'timestamp': current_time.isoformat(),
+                'url': original_url,  # Store original URL
+                'reddit_url': reddit_url,
+                'original_title': title # Store original title for reference
+            }
+            app_logger.info(f"Stored score with key '{canonical_key}' - Original: {original_url}, Reddit: {reddit_url}")
+        else:
+            # Fallback: Store by original title if key couldn't be generated
+            # Note: This won't prevent duplicates effectively if titles vary slightly.
+             posted_scores[title] = {
+                'timestamp': current_time.isoformat(),
+                'url': original_url,
+                'reddit_url': reddit_url,
+                'original_title': title
+            }
+             app_logger.warning(f"Stored score using original title as key (no canonical key) - Original: {original_url}, Reddit: {reddit_url}")
+
+        # Save posted_scores data (only need to save once)
+        save_data(posted_scores, POSTED_SCORES_FILE)
+        
+        # Store score with Reddit post URL and video URL (OLD LOGIC - REMOVE/COMMENT OUT)
+        # posted_scores[title] = {
+        #     'timestamp': current_time.isoformat(),
+        #     'url': original_url,  # Store original URL
+        #     'reddit_url': reddit_url
+        # }
+        # app_logger.info(f"Stored URLs - Original: {original_url}, Reddit: {reddit_url}")
         
         # Try to extract MP4 link with retries
         mp4_url = await extract_mp4_with_retries(submission)
@@ -229,10 +268,10 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         else:
             app_logger.info(f"Skipping MP4 post - {'No MP4 URL found' if not mp4_url else 'Same as original URL'}")
             
-        # Mark URL as processed
+        # Mark URL as processed (still useful for quick check of exact URLs)
         posted_urls.add(url)
         save_data(posted_urls, POSTED_URLS_FILE)
-        save_data(posted_scores, POSTED_SCORES_FILE)
+        # save_data(posted_scores, POSTED_SCORES_FILE) # No longer needed here, saved above
         
         return True
         
@@ -299,6 +338,10 @@ async def periodic_check():
             # Create a new Reddit client for each iteration
             reddit = await create_reddit_client()
             try:
+                # Perform cleanup of old scores periodically
+                if cleanup_old_scores(posted_scores):
+                    save_data(posted_scores, POSTED_SCORES_FILE) # Save if cleanup occurred
+                
                 await check_new_posts(None)
             finally:
                 # Always close the Reddit client properly
@@ -338,7 +381,7 @@ async def test_past_hours(hours: int = 2) -> None:
             if ('goal' in title.lower() or 'score' in title.lower()):
                 found += 1
                 app_logger.info(f"Found goal post: {title}")
-                await process_submission(submission)
+                await process_submission(submission, ignore_duplicates=True) # Ignore duplicates during testing?
                 
         app_logger.info(f"Test complete. Processed {processed} posts, found {found} goal posts.")
         

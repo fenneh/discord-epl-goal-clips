@@ -99,60 +99,158 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
         
     # Look for score patterns first
     score_patterns = [
-        r'(.*?)\s*\[(\d+)\]\s*-\s*(\d+)\s*(.*)',  # Team1 [1] - 0 Team2
-        r'(.*?)\s*(\d+)\s*-\s*\[(\d+)\]\s*(.*)',  # Team1 0 - [1] Team2
-        r'(.*?)\s*\[(\d+)\s*-\s*(\d+)\]\s*(.*)',  # Team1 [1-0] Team2
+        # More robust patterns allowing for different spacing and bracket positions
+        r'^(.*?)\s*\[(\d+)\]\s*-\s*(\d+)\s*(.*?)$',  # Team1 [1] - 0 Team2
+        r'^(.*?)\s*(\d+)\s*-\s*\[(\d+)\]\s*(.*?)$',  # Team1 0 - [1] Team2
+        r'^(.*?)\s*\[(\d+)\s*-\s*(\d+)\]\s*(.*?)$',  # Team1 [1-0] Team2
+        # r'^(.*?)\s*(\d+)\s*-\s*(\d+)\s*\[(.*)\]\s*-\' # Team1 1 - 0 [Team2 goal] - (Less common but possible)
+        # Commenting out the potentially problematic pattern for now
     ]
     
+    matched_pl_team_data = None # Store the first matched PL team data
+
     # Try score patterns first
     for pattern in score_patterns:
-        match = re.search(pattern, title_lower)
+        match = re.search(pattern, title_lower, re.IGNORECASE)
         if match:
-            team1, score1, score2, team2 = match.groups()
-            team1 = team1.strip()
-            team2 = team2.strip()
+            app_logger.debug(f"Score pattern matched: {pattern}")
+            groups = match.groups()
             
-            # Determine which team scored based on bracket position
-            is_team1_scoring = '[' in title.split('-')[0]
-            scoring_team = team1 if is_team1_scoring else team2
-            other_team = team2 if is_team1_scoring else team1
+            # Extract teams based on pattern type
+            if len(groups) == 4:
+                 team1_str, score1, score2, team2_str = groups
+            else: # Handle pattern with team name in brackets (less likely)
+                # Adjust logic if needed based on exact pattern structure
+                app_logger.warning(f"Unhandled score pattern group count: {len(groups)}")
+                continue
+
+            team1_str = team1_str.strip()
+            team2_str = team2_str.strip()
+            app_logger.debug(f"Extracted teams from score pattern: '{team1_str}' vs '{team2_str}'")
             
-            # Check teams in order of scoring
-            scoring_team_match = None
-            other_team_match = None
-            
+            # Determine which team likely scored based on bracket position in the *original* title
+            # Find the first hyphen surrounded by spaces
+            hyphen_match = re.search(r'\s+-\s+', title)
+            if hyphen_match:
+                split_point = hyphen_match.start()
+                part1 = title[:split_point]
+                part2 = title[split_point:]
+                is_team1_scoring = '[' in part1 and ']' in part1
+                is_team2_scoring = '[' in part2 and ']' in part2
+
+                # Prefer the team string associated with the bracket
+                scoring_team_str = team1_str if is_team1_scoring else team2_str
+                other_team_str = team2_str if is_team1_scoring else team1_str
+
+                # If brackets appear in both or neither part (e.g., [1-0]), scoring team is ambiguous here
+                if is_team1_scoring == is_team2_scoring:
+                    scoring_team_str = None # Cannot determine priority based on brackets
+            else:
+                 scoring_team_str = None # Cannot determine priority if standard hyphen separator not found
+
+            # Check both extracted team strings against PL teams
+            team1_match_data = None
+            team2_match_data = None
             for team_name, team_data in premier_league_teams.items():
-                # Check scoring team first
-                if not scoring_team_match:
-                    result = check_team_match(scoring_team, team_name, team_data)
-                    if result:
-                        scoring_team_match = result
-                
-                # Then check other team
-                if not other_team_match:
-                    result = check_team_match(other_team, team_name, team_data)
-                    if result:
-                        other_team_match = result
-                
-                # If we found both teams, use the scoring team's data
-                if scoring_team_match:
-                    if include_metadata and isinstance(scoring_team_match, dict):
-                        scoring_team_match['is_scoring'] = True
-                    return scoring_team_match
+                 if not team1_match_data:
+                     result = check_team_match(team1_str, team_name, team_data)
+                     if result:
+                         team1_match_data = result if isinstance(result, dict) else {'name': result, 'data': team_data, 'is_scoring': None}
+                 if not team2_match_data:
+                     result = check_team_match(team2_str, team_name, team_data)
+                     if result:
+                         team2_match_data = result if isinstance(result, dict) else {'name': result, 'data': team_data, 'is_scoring': None}
             
-            # If we only found the non-scoring team, use that
-            if other_team_match:
-                if include_metadata and isinstance(other_team_match, dict):
-                    other_team_match['is_scoring'] = False
-                return other_team_match
-    
-    # If no score pattern found, try to find any team in the title
+            # Determine final result based on matches and scoring priority
+            if team1_match_data and team2_match_data:
+                # Both are PL teams, prioritize based on scoring hint if available
+                if scoring_team_str:
+                    if check_team_match(scoring_team_str, team1_match_data['name'], team1_match_data['data']):
+                        team1_match_data['is_scoring'] = True
+                        team2_match_data['is_scoring'] = False
+                        matched_pl_team_data = team1_match_data
+                    elif check_team_match(scoring_team_str, team2_match_data['name'], team2_match_data['data']):
+                        team2_match_data['is_scoring'] = True
+                        team1_match_data['is_scoring'] = False
+                        matched_pl_team_data = team2_match_data
+                    else:
+                         # Scoring hint didn't match either cleanly, return first PL team found
+                         matched_pl_team_data = team1_match_data 
+                else:
+                    # No scoring hint, return first PL team found
+                    matched_pl_team_data = team1_match_data
+            elif team1_match_data:
+                 team1_match_data['is_scoring'] = scoring_team_str is not None and check_team_match(scoring_team_str, team1_match_data['name'], team1_match_data['data'])
+                 matched_pl_team_data = team1_match_data
+            elif team2_match_data:
+                 team2_match_data['is_scoring'] = scoring_team_str is not None and check_team_match(scoring_team_str, team2_match_data['name'], team2_match_data['data'])
+                 matched_pl_team_data = team2_match_data
+            else:
+                 app_logger.debug(f"Score pattern matched, but neither '{team1_str}' nor '{team2_str}' are recognized PL teams.")
+
+            # If we found a PL team via score pattern, return it
+            if matched_pl_team_data:
+                 app_logger.debug(f"Found PL team via score pattern: {matched_pl_team_data['name']}")
+                 return matched_pl_team_data if include_metadata else matched_pl_team_data['name']
+            # else: continue searching other patterns or fallback
+
+    # --- Fallback Logic --- 
+    # If no score pattern yielded a PL team match, search the whole title BUT prioritize full names
+    app_logger.debug("No PL team found via score patterns, trying fallback search.")
+    found_teams = []
     for team_name, team_data in premier_league_teams.items():
         result = check_team_match(title_lower, team_name, team_data)
         if result:
-            return result
+            # Store the result (which might be dict or str)
+            found_teams.append(result)
+
+    if not found_teams:
+        app_logger.debug("Fallback: No PL teams found in title.")
+        return None
+    
+    # Prioritize matches based on full team name over aliases in fallback
+    full_name_matches = []
+    alias_matches = []
+    for match_result in found_teams:
+         team_name = match_result['name'] if isinstance(match_result, dict) else match_result
+         team_data = premier_league_teams.get(team_name, {})
+         # This requires check_team_match to indicate what specifically matched, 
+         # or we compare the found team name against the title again
+         # Simplification: Check if the main team name (not just alias) is in the title
+         if re.search(rf'\b{re.escape(team_name.lower())}\b', title_lower):
+             full_name_matches.append(match_result)
+         else:
+             # Check if it was potentially an alias match like 'United'
+             # Be stricter: avoid short/ambiguous aliases in fallback
+             is_ambiguous_alias = False
+             aliases = [a.lower() for a in team_data.get('aliases', [])]
+             for alias in aliases:
+                  # Example ambiguity check: alias is short and appears in title
+                 if len(alias) <= 6 and re.search(rf'\b{re.escape(alias)}\b', title_lower):
+                      # We need to know if THIS alias was the reason for the match in check_team_match
+                      # This logic is imperfect without more info from check_team_match
+                      # For now, we'll cautiously add it to alias_matches but prioritize full_name_matches
+                      is_ambiguous_alias = True 
+                      break # Found one potentially ambiguous alias
+             if not is_ambiguous_alias:
+                  alias_matches.append(match_result)
+             else:
+                  app_logger.debug(f"Fallback: Ignoring potentially ambiguous alias match for {team_name}")
+
+    # Return the best match: prefer full name, then non-ambiguous alias
+    if full_name_matches:
+        best_match = full_name_matches[0] # Return first full name match
+        app_logger.debug(f"Fallback: Returning full name match: {best_match['name'] if isinstance(best_match, dict) else best_match}")
+        return best_match if include_metadata else (best_match['name'] if isinstance(best_match, dict) else best_match)
+    elif alias_matches:
+        best_match = alias_matches[0] # Return first non-ambiguous alias match
+        app_logger.debug(f"Fallback: Returning alias match: {best_match['name'] if isinstance(best_match, dict) else best_match}")
+        return best_match if include_metadata else (best_match['name'] if isinstance(best_match, dict) else best_match)
+    else:
+        app_logger.debug("Fallback: Only found ambiguous alias matches, returning None.")
+        return None
             
-    return None
+    # return None # Original end of function if nothing found
 
 async def extract_mp4_link(submission) -> Optional[str]:
     """Extract MP4 link from submission.
