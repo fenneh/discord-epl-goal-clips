@@ -8,9 +8,8 @@ from bs4 import BeautifulSoup
 from src.config import CLIENT_ID, CLIENT_SECRET, USER_AGENT
 from src.utils.logger import app_logger
 from src.config.teams import premier_league_teams
-from src.utils.url_utils import get_base_domain
+from src.utils.url_utils import get_base_domain, get_domain_info
 from src.services.video_service import video_extractor
-from src.config.domains import base_domains
 
 async def create_reddit_client() -> asyncpraw.Reddit:
     """Create and return a Reddit client instance.
@@ -292,14 +291,20 @@ async def extract_mp4_link(submission) -> Optional[str]:
                 return mp4_url
                 
         # Use video extractor for supported base domains
-        if any(domain in base_domain for domain in base_domains):
-            app_logger.info(f"Using video extractor for {base_domain}")
-            mp4_url = video_extractor.extract_mp4_url(submission.url)
+        domain_info = get_domain_info(submission.url)
+        matched_base = domain_info.get('matched_base') if domain_info else None
+
+        if matched_base:
+            app_logger.info(f"Using video extractor for {domain_info.get('full_domain')} (base: {matched_base})")
+            # Await the async call
+            mp4_url = await video_extractor.extract_mp4_url(submission.url)
             if mp4_url:
                 app_logger.info(f"✓ Found MP4 URL: {mp4_url}")
                 return mp4_url
             else:
                 app_logger.warning(f"Video extractor failed to find MP4 URL for: {submission.url}")
+        else:
+             app_logger.debug(f"Domain not supported by video extractor: {domain_info.get('full_domain') if domain_info else 'Unknown'}")
                 
         app_logger.warning(f"No MP4 URL found for submission: {submission.url}")
         return None

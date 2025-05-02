@@ -10,10 +10,10 @@ from src.services.reddit_service import create_reddit_client, find_team_in_title
 from src.services.discord_service import post_to_discord, post_mp4_link
 from src.services.video_service import video_extractor
 from src.utils.persistence import save_data, load_data
-from src.utils.url_utils import is_valid_domain, get_base_domain
+from src.utils.url_utils import get_domain_info
 from src.utils.logger import app_logger
 from src.utils.score_utils import is_duplicate_score, cleanup_old_scores, extract_goal_info, generate_canonical_key
-from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, FIND_MP4_LINKS, POST_AGE_MINUTES
+from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES
 from src.config.domains import base_domains
 import re
 
@@ -167,20 +167,20 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             app_logger.info(f"[SKIP] Not a goal post: {title}")
             return False
             
-        # Check if URL domain is allowed
-        base_domain = get_base_domain(url)
-        app_logger.debug(f"Checking domain: {base_domain}")
-        
-        # Check if domain contains any of our base domains
-        domain_allowed = False
-        for allowed_domain in base_domains:
-            if allowed_domain in base_domain:
-                domain_allowed = True
-                break
-                
-        if not domain_allowed:
-            app_logger.info(f"[SKIP] Domain not allowed: {base_domain}")
+        # --- Updated Domain Check --- 
+        domain_info = get_domain_info(url)
+        if not domain_info:
+            app_logger.warning(f"[SKIP] Could not parse domain for URL: {url}")
             return False
+        
+        full_domain = domain_info['full_domain']
+        matched_base = domain_info['matched_base']
+        app_logger.debug(f"Checking domain: {full_domain} (Matched base: {matched_base})")
+
+        if not matched_base:
+            app_logger.info(f"[SKIP] Domain not allowed: {full_domain}")
+            return False
+        # --- End Updated Domain Check ---
             
         # Extract goal info and generate canonical key first
         current_info = extract_goal_info(title)

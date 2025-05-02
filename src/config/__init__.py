@@ -14,18 +14,18 @@ DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
 DISCORD_USERNAME = os.getenv('DISCORD_USERNAME', 'Ally')  # Default to 'Ally' if not set
 DISCORD_AVATAR_URL = os.getenv('DISCORD_AVATAR_URL', 'https://cdn1.rangersnews.uk/uploads/24/2024/03/GettyImages-459578698-scaled-e1709282146939-1024x702.jpg')  # Default to current image if not set
 
-# Feature toggle for finding direct MP4 links
-FIND_MP4_LINKS = True
+# Feature toggle for finding direct MP4 links (REMOVED - Currently unused)
+# FIND_MP4_LINKS = True
 
 # Post age cutoff in minutes (default 5 minutes)
 POST_AGE_MINUTES = int(os.getenv('POST_AGE_MINUTES', '5'))
 
-# Allowed domains for goal clips
-ALLOWED_DOMAINS = [
-    'streamff.com',
-    'streamin.me',
-    'dubz.co'
-]
+# Allowed domains for goal clips (REMOVED - Logic uses base_domains from domains.py/filters.py)
+# ALLOWED_DOMAINS = [
+#     'streamff.com',
+#     'streamin.me',
+#     'dubz.co'
+# ]
 
 # Base directory for data storage
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
