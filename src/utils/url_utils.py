@@ -1,79 +1,65 @@
 """URL handling utilities."""
 
 from urllib.parse import urlparse
-from typing import Optional
-from src.config.domains import base_domains
+from typing import Optional, Dict
+# Use the base_domains set from filters as the source of truth
+from src.config.filters import base_domains 
+from src.utils.logger import app_logger
 
-def extract_base_domain(url: str) -> Optional[str]:
-    """Extract the base domain from a URL.
-    
+# Removed extract_base_domain and is_valid_domain as they were overlapping/confusing
+
+def get_domain_info(url: str) -> Optional[Dict[str, Optional[str]]]:
+    """Parse URL, normalize domain, and check if it matches known video base domains.
+
     Args:
-        url (str): URL to extract base domain from
-        
+        url (str): URL to parse.
+
     Returns:
-        str: Full domain, or None if parsing fails
-        
-    Raises:
-        ValueError: If URL is invalid
+        Optional[Dict[str, Optional[str]]]: 
+            A dictionary containing 'full_domain' (normalized) and 'matched_base' 
+            (e.g., 'streamable') if a known base domain is found within the full domain.
+            Returns None if the URL is invalid or parsing fails.
     """
+    if not url or not isinstance(url, str):
+        app_logger.warning(f"Invalid URL received for domain check: {url}")
+        return None
+
     try:
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
-        if not domain:
-            domain = parsed.path.lower()
-            
-        # Invalid URL
-        if not domain or '.' not in domain:
-            raise ValueError(f"Invalid URL: {url}")
-        
-        # Remove www. prefix if present
+
+        # Handle cases where domain might be in path (e.g., for file:// URLs, though unlikely here)
+        if not domain and parsed.path:
+             # Attempt to extract something resembling a domain from the path
+             path_parts = parsed.path.lower().split('/')
+             if len(path_parts) > 1 and '.' in path_parts[0]:
+                 domain = path_parts[0]
+             else:
+                 app_logger.debug(f"Could not extract domain from netloc or path: {url}")
+                 return None # Cannot determine domain
+        elif not domain:
+             app_logger.debug(f"Could not extract domain from netloc: {url}")
+             return None # Cannot determine domain
+
+        # Remove 'www.' prefix if present
         if domain.startswith('www.'):
             domain = domain[4:]
-        
-        # Remove port if present
-        if ':' in domain:
-            domain = domain.split(':')[0]
-            
-        # Split by dots and get the domain parts
-        parts = domain.split('.')
-        
-        # Try to find a matching base domain in our parts
-        for part in parts:
-            if part in base_domains:
-                # Return the full domain
-                return domain
-                
-        # If no exact match found, try partial matching
-        # This helps with cases like 'streamff' matching 'streamff-new'
-        for part in parts:
-            for base in base_domains:
-                if base in part:
-                    # Return the full domain
-                    return domain
-                    
-        # For invalid domains, still return the domain
-        return domain
-    except Exception as e:
-        raise ValueError(f"Failed to parse URL: {url}") from e
 
-def is_valid_domain(url: str) -> bool:
-    """Check if a URL's domain contains any of our base domains.
-    
-    Args:
-        url (str): URL to check
-        
-    Returns:
-        bool: True if domain is valid, False otherwise
-    """
-    try:
-        domain = extract_base_domain(url)
-        if not domain:
-            return False
-            
-        # Check if any of our base domains are in the domain
-        return any(base in domain for base in base_domains)
-    except ValueError:
-        return False
+        # Check if domain contains any of our base domains
+        matched_base = None
+        for base in base_domains:
+            if base in domain:
+                matched_base = base
+                break # Found the first match
+
+        return {
+            'full_domain': domain,
+            'matched_base': matched_base
+        }
+
+    except Exception as e:
+        app_logger.error(f"Error parsing URL '{url}' in get_domain_info: {e}", exc_info=True)
+        return None # Return None on parsing errors
 
 def get_base_domain(url: str) -> str:
     """Get base domain from URL.
