@@ -16,6 +16,7 @@ from src.utils.score_utils import is_duplicate_score, cleanup_old_scores, extrac
 from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES
 from src.config.domains import base_domains
 import re
+import asyncpraw
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -279,22 +280,14 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         app_logger.error(f"Error processing submission: {e}")
         return False
 
-async def check_new_posts(background_tasks: BackgroundTasks) -> None:
-    """Check for new goal posts on Reddit."""
+async def check_new_posts(reddit_client: asyncpraw.Reddit, background_tasks: Optional[BackgroundTasks] = None) -> None:
+    """Check for new goal posts on Reddit using an existing Reddit client."""
     try:
         app_logger.info("Checking new posts in r/soccer...")
         
-        # Create Reddit client
-        try:
-            reddit = await create_reddit_client()
-            app_logger.info("Successfully created Reddit client")
-        except Exception as e:
-            app_logger.error(f"Failed to create Reddit client: {str(e)}")
-            return
-            
         # Get subreddit
         try:
-            subreddit = await reddit.subreddit('soccer')
+            subreddit = await reddit_client.subreddit('soccer')
             app_logger.info("Successfully got r/soccer subreddit")
         except Exception as e:
             app_logger.error(f"Failed to get subreddit: {str(e)}")
@@ -333,27 +326,37 @@ async def periodic_check():
     """Periodically check for new posts."""
     app_logger.info("Starting periodic check...")
     
+    reddit_client = None  # Initialize client variable
     while True:
         try:
-            # Create a new Reddit client for each iteration
-            reddit = await create_reddit_client()
-            try:
-                # Perform cleanup of old scores periodically
-                if cleanup_old_scores(posted_scores):
-                    save_data(posted_scores, POSTED_SCORES_FILE) # Save if cleanup occurred
-                
-                await check_new_posts(None)
-            finally:
-                # Always close the Reddit client properly
-                await reddit.close()
-                
+            # Create a new Reddit client if one doesn't exist or to refresh it periodically (e.g., after an error)
+            if reddit_client is None:
+                app_logger.info("Creating new Reddit client for periodic check.")
+                reddit_client = await create_reddit_client()
+            
+            # Perform cleanup of old scores periodically
+            if cleanup_old_scores(posted_scores):
+                save_data(posted_scores, POSTED_SCORES_FILE) # Save if cleanup occurred
+            
+            await check_new_posts(reddit_client, None) # Pass the client
+            
             # Sleep for 30 seconds between checks to avoid rate limits
             await asyncio.sleep(30)
             
+        except asyncpraw.exceptions.RedditAPIException as e:
+            app_logger.error(f"Reddit API Exception in periodic check: {str(e)}. Attempting to recreate client on next cycle.")
+            if reddit_client:
+                await reddit_client.close() # Close the potentially problematic client
+            reddit_client = None # Signal to recreate client
+            await asyncio.sleep(60) # Longer sleep on API errors
         except Exception as e:
-            app_logger.error(f"Error in periodic check: {str(e)}")
-            # Sleep for 60 seconds on error before retrying
+            app_logger.error(f"Error in periodic check: {str(e)}", exc_info=True)
+            if reddit_client:
+                 await reddit_client.close() # Ensure client is closed on other errors too
+            reddit_client = None # Signal to recreate client
             await asyncio.sleep(60)
+        # No finally block needed here for reddit_client.close() as we want to reuse it,
+        # and close it specifically on errors that might require a new client.
 
 async def test_past_hours(hours: int = 2) -> None:
     """Test the bot by processing posts from the past X hours.
@@ -440,7 +443,19 @@ async def check_posts(background_tasks: BackgroundTasks):
     Returns:
         dict: Status message
     """
-    await check_new_posts(background_tasks)
+    # For a manual trigger, it might be better to create a fresh client
+    # or manage a global client more carefully if this endpoint is hit often.
+    # For simplicity here, let's create one for the scope of this request.
+    reddit_client = None
+    try:
+        reddit_client = await create_reddit_client()
+        await check_new_posts(reddit_client, background_tasks)
+    except Exception as e:
+        app_logger.error(f"Error during manual check_posts: {e}", exc_info=True)
+        return {"status": "Error occurred during check"}
+    finally:
+        if reddit_client:
+            await reddit_client.close()
     return {"status": "Checking for new posts"}
 
 @app.get("/health")
