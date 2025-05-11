@@ -278,47 +278,59 @@ class VideoExtractor:
             app_logger.error(f"Unexpected error extracting from streamable: {e}", exc_info=True)
             return None
 
-    async def extract_mp4_url(self, url: str) -> Optional[str]:
-        """Extract MP4 URL from any supported domain asynchronously."""
-        app_logger.info(f"Extracting MP4 URL from: {url}")
-        
-        # Use the refined get_domain_info function
-        domain_info = get_domain_info(url) # This function is synchronous
-        if not domain_info:
-             app_logger.warning(f"Could not parse domain info for URL: {url}")
-             return None
+    # Add any other site-specific extractors here
+    # Example:
+    # async def extract_from_anothersite(self, session: aiohttp.ClientSession, url: str) -> Optional[str]:
+    #     # ... extraction logic ...
+    #     pass
 
-        domain = domain_info['full_domain']
-        matched_base = domain_info['matched_base']
-        app_logger.info(f"Domain: {domain} (Matched base: {matched_base})")
-                
-        if not matched_base:
-            app_logger.warning(f"Unsupported domain for MP4 extraction: {domain}")
+    async def extract_mp4_url(self, url: str) -> Optional[str]:
+        """Extract MP4 URL from supported sites by dispatching to the correct method asynchronously."""
+        if not url:
             return None
-            
-        # Create a session for this extraction attempt
+
+        # Get a new session for this extraction attempt
+        # This ensures headers are fresh if they were modified by a previous call
+        # and simplifies session management for this specific class structure.
+        # For very high-frequency calls, a shared session within app lifespan might be better.
         async with await self._get_session() as session:
             try:
-                if 'streamable' == matched_base:
-                    app_logger.info("Using streamable extractor")
-                    return await self.extract_from_streamable(session, url)
-                elif 'streamin' == matched_base:
-                    app_logger.info("Using streamin extractor")
-                    return await self.extract_from_streamin(session, url)
-                elif 'dubz' == matched_base:
-                    app_logger.info("Using dubz extractor")
-                    return await self.extract_from_dubz(session, url)
-                elif 'streamff' == matched_base:
-                    app_logger.info("Using streamff extractor")
+                # Ensure URL has a scheme
+                if not url.startswith(('http://', 'https://')):
+                    url = 'https://' + url
+                    app_logger.info(f"Added scheme to URL: {url}")
+
+                # Use regex for flexible TLD matching and dispatch
+                # The order matters if a URL could potentially match multiple patterns.
+                if re.search(r'https://[^/]*streamff\.\w+', url, re.IGNORECASE):
+                    app_logger.info(f"Dispatching to streamff extractor for: {url}")
                     return await self.extract_from_streamff(session, url)
+                elif re.search(r'https://[^/]*streamin\.\w+', url, re.IGNORECASE):
+                    app_logger.info(f"Dispatching to streamin extractor for: {url}")
+                    return await self.extract_from_streamin(session, url)
+                elif re.search(r'https://[^/]*dubz\.\w+', url, re.IGNORECASE):
+                    app_logger.info(f"Dispatching to dubz extractor for: {url}")
+                    return await self.extract_from_dubz(session, url)
+                elif re.search(r'https://[^/]*streamable\.\w+', url, re.IGNORECASE):
+                    app_logger.info(f"Dispatching to streamable extractor for: {url}")
+                    return await self.extract_from_streamable(session, url)
+                # Add other site checks here using re.search with their base domain names
+                # elif re.search(r'https://[^/]*anothersite\.\w+', url, re.IGNORECASE):
+                #     return await self.extract_from_anothersite(session, url)
                 else:
-                    # Add extractors for other base_domains if needed
-                    app_logger.warning(f"No specific extractor implemented for base domain: {matched_base}")
+                    app_logger.warning(f"No specific extractor found for URL: {url}")
+                    # Fallback: try a generic scrape if desired, or just return None
+                    # For now, we only use specific extractors.
                     return None
+            except aiohttp.ClientError as e:
+                app_logger.error(f"ClientError during MP4 extraction dispatch for {url}: {str(e)}")
+                return None
+            except asyncio.TimeoutError:
+                app_logger.error(f"Timeout during MP4 extraction dispatch for {url}")
+                return None
             except Exception as e:
-                 # Catch potential errors during await or session handling
-                 app_logger.error(f"Error during MP4 extraction process for {url}: {e}", exc_info=True)
-                 return None
+                app_logger.error(f"Unexpected error in extract_mp4_url for {url}: {str(e)}", exc_info=True)
+                return None
 
 # Create a single instance of the extractor
 video_extractor = VideoExtractor()

@@ -310,5 +310,5 @@ async def extract_mp4_link(submission) -> Optional[str]:
         return None
             
     except Exception as e:
-        app_logger.error(f"Error extracting MP4 link: {str(e)}")
+        app_logger.error(f"Error extracting MP4 link: {str(e)}", exc_info=True)
         return None
