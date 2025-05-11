@@ -260,7 +260,7 @@ def find_team_in_title(title):
             # Find the matching team
             title_lower = scoring_team_part.lower()
             for team, data in premier_league_teams.items():
-                if any(name.lower() in title_lower for name in data["names"]):
+                if any(re.search(r'\b' + re.escape(name.lower()) + r'\b', title_lower) for name in data["names"]):
                     return data
     
     # Return None if we can't determine the scorer
