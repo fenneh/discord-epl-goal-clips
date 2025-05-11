@@ -367,11 +367,30 @@ def post_to_discord(title, url, mp4_url=None):
         response.raise_for_status()
         logging.info("Successfully posted styled message to Discord")
         
-        # If we already have an MP4 URL, post it immediately
-        if mp4_url:
+        # --- MP4 Handling ---
+        # 1. Use mp4_url if it was passed in (e.g., if future logic pre-fetches it).
+        # 2. If not, and FIND_MP4_LINKS is true, try one quick extraction.
+        # 3. If we have a link from 1 or 2, post it.
+        # 4. If not, and FIND_MP4_LINKS is true, start the background retry thread.
+
+        mp4_to_post_immediately = mp4_url # Use if already provided
+
+        if not mp4_to_post_immediately and FIND_MP4_LINKS:
+            logging.debug(f"No pre-fetched MP4. Attempting one-time extraction for {url} before retry thread.")
+            try:
+                # This is a synchronous call. It should be quick or fail fast due to timeouts in VideoExtractor.
+                initial_attempt_mp4 = video_extractor.extract_mp4_url(url)
+                if initial_attempt_mp4:
+                    mp4_to_post_immediately = initial_attempt_mp4
+                    logging.info(f"Successfully extracted MP4 on initial attempt in post_to_discord: {mp4_to_post_immediately}")
+            except Exception as e:
+                logging.warning(f"Initial MP4 extraction attempt in post_to_discord for {url} failed: {e}. Will rely on retry thread if enabled.")
+                # mp4_to_post_immediately remains None
+
+        if mp4_to_post_immediately:
             time.sleep(1)  # Small delay to ensure correct order
             mp4_data = {
-                "content": mp4_url,
+                "content": mp4_to_post_immediately,
                 "username": DISCORD_USERNAME,
                 "avatar_url": DISCORD_AVATAR_URL
             }
@@ -382,16 +401,18 @@ def post_to_discord(title, url, mp4_url=None):
                 headers={'Content-Type': 'application/json'}
             )
             response.raise_for_status()
-            logging.info("Successfully posted MP4 URL to Discord")
-        else:
-            # Start background retry process for MP4 extraction
-            urls = [url]  # Add any additional URLs you want to try
+            logging.info(f"Successfully posted MP4 URL to Discord: {mp4_to_post_immediately}")
+        elif FIND_MP4_LINKS: # No immediate MP4, FIND_MP4_LINKS is true, so start retry.
+            logging.info(f"MP4 not available for immediate post for {url}. Starting background retry thread.")
+            urls_to_retry = [url]  # Add any additional URLs you want to try
             retry_thread = Thread(
                 target=retry_mp4_extraction,
-                args=(title, urls),
+                args=(title, urls_to_retry),
                 daemon=True
             )
             retry_thread.start()
+        else: # No immediate MP4, and FIND_MP4_LINKS is false. Nothing more to do for MP4.
+            logging.debug(f"FIND_MP4_LINKS is false or MP4 was already handled. No MP4 action for {url}.")
             
     except Exception as e:
         logging.error(f"Failed to post to Discord: {e}")
@@ -488,6 +509,7 @@ class VideoExtractor:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+        self.default_request_timeout = 10 # seconds for GET requests
 
     def validate_mp4_url(self, url):
         """Validate that an MP4 URL is complete and accessible"""
@@ -523,7 +545,7 @@ class VideoExtractor:
     def extract_from_streamin(self, url):
         """Extract MP4 URL from streamin.one"""
         try:
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(url, headers=self.headers, timeout=self.default_request_timeout)
             soup = BeautifulSoup(response.text, 'html.parser')
             # Look for source tags within video elements
             source = soup.find('source')
@@ -561,11 +583,12 @@ class VideoExtractor:
         logging.info(f"Attempting to extract MP4 from: {url}")
         
         try:
-            if 'streamff.co' in url:
+            # Use regex to match base domain name with any TLD
+            if re.search(r'https://[^/]*streamff\.\w+', url, re.IGNORECASE):
                 return self.extract_from_streamff(url)
-            elif any(domain in url for domain in streamin_domains):
+            elif re.search(r'https://[^/]*streamin\.\w+', url, re.IGNORECASE): # Covers streamin.one, streamin.me, etc.
                 return self.extract_from_streamin(url)
-            elif 'dubz.link' in url:
+            elif re.search(r'https://[^/]*dubz\.\w+', url, re.IGNORECASE): # Covers dubz.link, dubz.co, etc.
                 return self.extract_from_dubz(url)
             else:
                 logging.warning(f"Unsupported URL format: {url}")
@@ -831,9 +854,9 @@ if __name__ == "__main__":
                         
                         if matched_urls:
                             # Try to get MP4 URL immediately first
-                            mp4_url = video_extractor.extract_mp4_url(matched_urls[0])
-                            # Post to Discord (will start retry process if no MP4 found)
-                            post_to_discord(title, matched_urls[0], mp4_url)
+                            # mp4_url = video_extractor.extract_mp4_url(matched_urls[0]) # REMOVED: This is now handled in post_to_discord
+                            # Post to Discord (will attempt initial MP4 extraction or start retry process if no MP4 found)
+                            post_to_discord(title, matched_urls[0], None) # Pass None for mp4_url
                             
                             # Mark this post as processed
                             posted_urls.add(post_id)
