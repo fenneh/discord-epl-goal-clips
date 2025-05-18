@@ -163,26 +163,33 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
             # Determine final result based on matches and scoring priority
             if team1_match_data and team2_match_data:
                 # Both are PL teams, prioritize based on scoring hint if available
-                if scoring_team_str:
-                    if check_team_match(scoring_team_str, team1_match_data['name'], team1_match_data['data']):
+                if scoring_team_str: # This implies hyphen_match was successful and is_team1_scoring/is_team2_scoring are set
+                    if is_team1_scoring and not is_team2_scoring: # Team1 clearly scored
                         team1_match_data['is_scoring'] = True
                         team2_match_data['is_scoring'] = False
                         matched_pl_team_data = team1_match_data
-                    elif check_team_match(scoring_team_str, team2_match_data['name'], team2_match_data['data']):
+                    elif is_team2_scoring and not is_team1_scoring: # Team2 clearly scored
                         team2_match_data['is_scoring'] = True
                         team1_match_data['is_scoring'] = False
                         matched_pl_team_data = team2_match_data
                     else:
-                         # Scoring hint didn't match either cleanly, return first PL team found
-                         matched_pl_team_data = team1_match_data 
+                         # Ambiguous (e.g., brackets in both parts, or is_team1_scoring == is_team2_scoring was true earlier)
+                         # or if scoring_team_str was None initially (though this 'if scoring_team_str:' check should prevent that here)
+                         # Default to team1 if ambiguous here, or consider no definitive scoring team.
+                         # For now, maintaining previous default-to-team1 behavior in ambiguity.
+                         app_logger.debug("Scoring team ambiguous based on bracket analysis, defaulting to team1 if both PL.")
+                         matched_pl_team_data = team1_match_data
                 else:
-                    # No scoring hint, return first PL team found
+                    # No scoring hint from hyphen analysis (scoring_team_str is None), default to first PL team found
+                    app_logger.debug("No definitive scoring hint from hyphen analysis, defaulting to team1 if both PL.")
                     matched_pl_team_data = team1_match_data
             elif team1_match_data:
-                 team1_match_data['is_scoring'] = scoring_team_str is not None and check_team_match(scoring_team_str, team1_match_data['name'], team1_match_data['data'])
+                 # Only team1 is a PL team, it's the one, scoring status depends on bracket hint if available
+                 team1_match_data['is_scoring'] = scoring_team_str is not None and is_team1_scoring and not is_team2_scoring
                  matched_pl_team_data = team1_match_data
             elif team2_match_data:
-                 team2_match_data['is_scoring'] = scoring_team_str is not None and check_team_match(scoring_team_str, team2_match_data['name'], team2_match_data['data'])
+                 # Only team2 is a PL team, it's the one, scoring status depends on bracket hint if available
+                 team2_match_data['is_scoring'] = scoring_team_str is not None and is_team2_scoring and not is_team1_scoring
                  matched_pl_team_data = team2_match_data
             else:
                  app_logger.debug(f"Score pattern matched, but neither '{team1_str}' nor '{team2_str}' are recognized PL teams.")
