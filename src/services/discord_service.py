@@ -1,9 +1,11 @@
 """Discord webhook service for posting goal clips."""
 
-import aiohttp
 import re
 from datetime import datetime, timezone
 from typing import Dict, Optional
+
+import aiohttp
+
 from src.config import DISCORD_WEBHOOK_URL, DISCORD_USERNAME, DISCORD_AVATAR_URL
 from src.config.teams import premier_league_teams
 from src.utils.logger import webhook_logger
