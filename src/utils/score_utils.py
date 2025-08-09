@@ -105,7 +105,7 @@ def normalize_team_name(team_name: str) -> str:
     # Make sure team names in keys are normalized lowercase too
     replacements = {
         'arsenal': ['gunners'],
-        'manchester united': ['man united', 'man utd', 'united', 'mufc'],
+        'manchester united': ['man united', 'man utd', 'manchester utd', 'united', 'mufc'],
         'manchester city': ['man city', 'city', 'mcfc'],
         'tottenham': ['spurs', 'thfc', 'tottenham hotspur', 'hotspur'],
         'wolverhampton wanderers': ['wolves', 'wwfc', 'wanderers'],
@@ -116,7 +116,14 @@ def normalize_team_name(team_name: str) -> str:
         'west ham united': ['west ham', 'hammers', 'whufc'],
         'liverpool': ['reds', 'lfc'],
         'chelsea': ['blues', 'cfc'],
-        'leicester city': ['leicester', 'lcfc', 'foxes']
+        'burnley': ['clarets', 'bfc'],
+        'leeds united': ['leeds', 'leeds utd', 'whites', 'lufc'],
+        'sunderland': ['black cats', 'safc'],
+        'nottingham forest': ['forest', 'nffc', 'nott\'m forest', 'nottm forest'],
+        'bournemouth': ['afc bournemouth', 'cherries'],
+        'brentford': ['bees'],
+        'fulham': ['cottagers', 'ffc'],
+        'everton': ['toffees', 'efc']
     }
     
     # Try to match team name with known variations first
