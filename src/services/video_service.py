@@ -1,13 +1,11 @@
 """Service for extracting video links from various sources."""
 
 import re
-# import requests # No longer needed
-import aiohttp # Use asynchronous HTTP client
-import asyncio # For potential timeouts
+import aiohttp
+import asyncio
 from bs4 import BeautifulSoup
 from src.utils.logger import app_logger
-# Use base_domains from filters config
-from src.config.filters import base_domains 
+from src.config.filters import base_domains
 from typing import Optional, Dict
 from urllib.parse import urlparse
 import traceback
@@ -17,7 +15,6 @@ class VideoExtractor:
     
     def __init__(self):
         """Initialize the video extractor."""
-        # Define headers once
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -33,14 +30,9 @@ class VideoExtractor:
             'Pragma': 'no-cache',
             'DNT': '1'
         }
-        # Session is managed per extraction call now
-        # self.session = None 
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Returns a shared aiohttp client session."""
-        # Simple approach: create a new session each time. 
-        # For higher performance, consider managing a single session 
-        # within the application's lifespan or using a context manager.
         return aiohttp.ClientSession(headers=self.headers)
 
     async def validate_mp4_url(self, session: aiohttp.ClientSession, url: str) -> bool:
@@ -129,28 +121,11 @@ class VideoExtractor:
             page_headers = {**self.headers, 'Referer': url}
             app_logger.info(f"Fetching streamin URL: {url}")
             
-            # app_logger.info("Making request with headers:")
-            # for k, v in page_headers.items():
-            #     app_logger.info(f"{k}: {v}")
-            
             async with asyncio.timeout(15):
                  async with session.get(url, headers=page_headers, allow_redirects=True) as response:
-                    response.raise_for_status() # Raise exception for bad status codes
-                    
-                    app_logger.info(f"Got response from {response.url}")
-                    app_logger.info(f"Response status: {response.status}")
-                    # app_logger.info("Response headers:")
-                    # for k, v in response.headers.items():
-                    #     app_logger.info(f"{k}: {v}")
-
+                    response.raise_for_status()
                     html_content = await response.text()
                     soup = BeautifulSoup(html_content, 'html.parser')
-                    app_logger.info("Looking for video URL in meta tags...")
-                    
-                    # Log all meta tags for debugging
-                    # app_logger.info("All meta tags:")
-                    # for meta in soup.find_all('meta'):
-                    #     app_logger.info(str(meta))
                     
                     # First try og:video:secure_url meta tag
                     meta = soup.find('meta', {'property': 'og:video:secure_url'})
@@ -174,26 +149,13 @@ class VideoExtractor:
                         else:
                              app_logger.warning(f"og:video found but failed validation: {mp4_url}")
                         
-                    # If meta tags not found, try video source
-                    app_logger.info("Looking for video source...")
-                    source = soup.select_one('body > main > div > video > source') # More specific selector
-                    if not source:
-                         source = soup.select_one('video > source') # Less specific
-                    if source:
-                        app_logger.info(f"Found video source tag: {source}")
-                        src = source.get('src')
-                        if src:
-                            app_logger.info(f"Found MP4 URL in video source: {src}")
-                            # Validate before returning
-                            if await self.validate_mp4_url(session, src):
-                                 return src
-                            else:
-                                 app_logger.warning(f"Video source found but failed validation: {src}")
+                    # Try video source if meta tags not found
+                    source = soup.select_one('body > main > div > video > source') or soup.select_one('video > source')
+                    if source and source.get('src'):
+                        src = source['src']
+                        if await self.validate_mp4_url(session, src):
+                            return src
                     
-                    app_logger.warning("No valid video source found via meta or source tags for streamin")
-                    # Log a sample of the HTML for debugging
-                    # app_logger.info("Sample of HTML content:")
-                    # app_logger.info(html_content[:1000])
                     return None
 
         except asyncio.TimeoutError:
@@ -230,41 +192,21 @@ class VideoExtractor:
                     soup = BeautifulSoup(html_content, 'html.parser')
                     app_logger.info("Looking for video source tag...")
                     
-                    # Try different selectors
-                    source = soup.select_one('video source')
-                    if not source:
-                        app_logger.info("No source found with 'video source', trying 'main div video source'")
-                        source = soup.select_one('main div video source')
-                    if not source:
-                        app_logger.info("No source found with selectors, trying find('source')")
-                        source = soup.find('source')
+                    # Find video source
+                    source = (soup.select_one('video source') or 
+                             soup.select_one('main div video source') or 
+                             soup.find('source'))
                         
-                    if source:
-                        app_logger.info(f"Found source tag: {source}")
-                        if source.get('src'):
-                            mp4_url = source['src']
-                            app_logger.info(f"Found src attribute: {mp4_url}")
-                            # Keep all query parameters but remove the #t=0.1 fragment
-                            if '#t=' in mp4_url:
-                                mp4_url = mp4_url.split('#')[0]
-                            
-                            # Streamable URLs often start with //, prepend https:
-                            if mp4_url.startswith('//'):
-                                mp4_url = f"https:{mp4_url}"
+                    if source and source.get('src'):
+                        mp4_url = source['src']
+                        # Remove fragment and fix protocol
+                        if '#t=' in mp4_url:
+                            mp4_url = mp4_url.split('#')[0]
+                        if mp4_url.startswith('//'):
+                            mp4_url = f"https:{mp4_url}"
 
-                            if await self.validate_mp4_url(session, mp4_url):
-                                app_logger.info(f"Successfully validated MP4 URL: {mp4_url}")
-                                return mp4_url
-                            else:
-                                app_logger.warning(f"MP4 URL validation failed: {mp4_url}")
-                        else:
-                            app_logger.warning("Source tag found but no src attribute")
-                    else:
-                        app_logger.warning("No source tag found in page")
-                        
-                    # Log the HTML to see what we're dealing with if needed
-                    # app_logger.info("Page HTML structure:")
-                    # app_logger.info(soup.prettify()[:1000])
+                        if await self.validate_mp4_url(session, mp4_url):
+                            return mp4_url
                     
                     return None
 
@@ -278,21 +220,12 @@ class VideoExtractor:
             app_logger.error(f"Unexpected error extracting from streamable: {e}", exc_info=True)
             return None
 
-    # Add any other site-specific extractors here
-    # Example:
-    # async def extract_from_anothersite(self, session: aiohttp.ClientSession, url: str) -> Optional[str]:
-    #     # ... extraction logic ...
-    #     pass
 
     async def extract_mp4_url(self, url: str) -> Optional[str]:
         """Extract MP4 URL from supported sites by dispatching to the correct method asynchronously."""
         if not url:
             return None
 
-        # Get a new session for this extraction attempt
-        # This ensures headers are fresh if they were modified by a previous call
-        # and simplifies session management for this specific class structure.
-        # For very high-frequency calls, a shared session within app lifespan might be better.
         async with await self._get_session() as session:
             try:
                 # Ensure URL has a scheme
@@ -300,8 +233,7 @@ class VideoExtractor:
                     url = 'https://' + url
                     app_logger.info(f"Added scheme to URL: {url}")
 
-                # Use regex for flexible TLD matching and dispatch
-                # The order matters if a URL could potentially match multiple patterns.
+                # Dispatch to appropriate extractor
                 if re.search(r'https://[^/]*streamff\.\w+', url, re.IGNORECASE):
                     app_logger.info(f"Dispatching to streamff extractor for: {url}")
                     return await self.extract_from_streamff(session, url)
@@ -314,13 +246,8 @@ class VideoExtractor:
                 elif re.search(r'https://[^/]*streamable\.\w+', url, re.IGNORECASE):
                     app_logger.info(f"Dispatching to streamable extractor for: {url}")
                     return await self.extract_from_streamable(session, url)
-                # Add other site checks here using re.search with their base domain names
-                # elif re.search(r'https://[^/]*anothersite\.\w+', url, re.IGNORECASE):
-                #     return await self.extract_from_anothersite(session, url)
                 else:
                     app_logger.warning(f"No specific extractor found for URL: {url}")
-                    # Fallback: try a generic scrape if desired, or just return None
-                    # For now, we only use specific extractors.
                     return None
             except aiohttp.ClientError as e:
                 app_logger.error(f"ClientError during MP4 extraction dispatch for {url}: {str(e)}")
