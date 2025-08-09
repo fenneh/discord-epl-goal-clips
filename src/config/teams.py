@@ -32,6 +32,12 @@ premier_league_teams = {
         "color": 0x0057B8,  # Blue
         "logo": "https://resources.premierleague.com/premierleague/badges/t36.png"
     },
+    "Burnley": {
+        "name": "Burnley",
+        "aliases": ["Burnley", "The Clarets", "BFC"],
+        "color": 0x6C1D45,  # Claret
+        "logo": "https://resources.premierleague.com/premierleague/badges/t90.png"
+    },
     "Chelsea": {
         "name": "Chelsea",
         "aliases": ["Chelsea", "The Blues", "CFC"],
@@ -56,11 +62,11 @@ premier_league_teams = {
         "color": 0xFFFFFF,  # White
         "logo": "https://resources.premierleague.com/premierleague/badges/t54.png"
     },
-    "Leicester City": {
-        "name": "Leicester City",
-        "aliases": ["Leicester", "Leicester City", "The Foxes", "LCFC"],
-        "color": 0x003090,  # Blue
-        "logo": "https://resources.premierleague.com/premierleague/badges/t13.png"
+    "Leeds United": {
+        "name": "Leeds United",
+        "aliases": ["Leeds", "Leeds United", "Leeds Utd", "The Whites", "LUFC"],
+        "color": 0xFFFFFF,  # White
+        "logo": "https://resources.premierleague.com/premierleague/badges/t2.png"
     },
     "Liverpool": {
         "name": "Liverpool",
@@ -92,11 +98,11 @@ premier_league_teams = {
         "color": 0xDD0000,  # Red
         "logo": "https://resources.premierleague.com/premierleague/badges/t17.png"
     },
-    "Southampton": {
-        "name": "Southampton",
-        "aliases": ["Southampton", "Saints", "The Saints", "SFC"],
-        "color": 0xD71920,  # Red
-        "logo": "https://resources.premierleague.com/premierleague/badges/t20.png"
+    "Sunderland": {
+        "name": "Sunderland",
+        "aliases": ["Sunderland", "The Black Cats", "SAFC"],
+        "color": 0xEB172B,  # Red
+        "logo": "https://resources.premierleague.com/premierleague/badges/t45.png"
     },
     "Tottenham": {
         "name": "Tottenham Hotspur",
