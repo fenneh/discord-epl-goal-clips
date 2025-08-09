@@ -1,22 +1,33 @@
 """Main entry point for the goal bot application."""
 
-import asyncio
 import argparse
+import asyncio
+import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Set, Dict, List, Optional
-from contextlib import asynccontextmanager
+
+import asyncpraw
 from fastapi import FastAPI, BackgroundTasks
-from src.services.reddit_service import create_reddit_client, find_team_in_title, extract_mp4_link
-from src.services.discord_service import post_to_discord, post_mp4_link
-from src.services.video_service import video_extractor
-from src.utils.persistence import save_data, load_data
-from src.utils.url_utils import get_domain_info
-from src.utils.logger import app_logger
-from src.utils.score_utils import is_duplicate_score, cleanup_old_scores, extract_goal_info, generate_canonical_key
+
 from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES
 from src.config.domains import base_domains
-import re
-import asyncpraw
+from src.services.discord_service import post_to_discord, post_mp4_link
+from src.services.reddit_service import (
+    create_reddit_client,
+    find_team_in_title,
+    extract_mp4_link
+)
+from src.services.video_service import video_extractor
+from src.utils.logger import app_logger
+from src.utils.persistence import save_data, load_data
+from src.utils.score_utils import (
+    is_duplicate_score,
+    cleanup_old_scores,
+    extract_goal_info,
+    generate_canonical_key
+)
+from src.utils.url_utils import get_domain_info
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

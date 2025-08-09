@@ -1,15 +1,17 @@
 """Reddit service for fetching goal clips."""
 
-import asyncpraw
 import re
-import aiohttp
 from typing import Optional, Dict, Any, Union
+
+import aiohttp
+import asyncpraw
 from bs4 import BeautifulSoup
+
 from src.config import CLIENT_ID, CLIENT_SECRET, USER_AGENT
-from src.utils.logger import app_logger
 from src.config.teams import premier_league_teams
-from src.utils.url_utils import get_base_domain, get_domain_info
 from src.services.video_service import video_extractor
+from src.utils.logger import app_logger
+from src.utils.url_utils import get_base_domain, get_domain_info
 
 async def create_reddit_client() -> asyncpraw.Reddit:
     """Create and return a Reddit client instance.
