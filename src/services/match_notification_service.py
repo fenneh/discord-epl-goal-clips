@@ -1,12 +1,12 @@
 """Match notification service for posting Premier League match updates."""
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Set, Any, Optional, List
 
 import aiohttp
 
-from src.config import DISCORD_WEBHOOK_URL, DISCORD_USERNAME, DISCORD_AVATAR_URL, DATA_DIR
+from src.config import DISCORD_WEBHOOK_URL, DISCORD_USERNAME, DISCORD_AVATAR_URL, DATA_DIR, POSTED_SCORES_FILE
 from src.services.espn_service import fetch_todays_matches, get_match_display_name, get_match_score_display, espn_logger
 from src.utils.match_utils import (
     map_espn_team_to_config,
@@ -18,14 +18,20 @@ from src.utils.match_utils import (
 )
 from src.utils.persistence import save_data, load_data
 from src.utils.logger import webhook_logger
+from src.utils.score_utils import normalize_team_name
 
 # Persistence files
 MATCH_STATE_FILE = os.path.join(DATA_DIR, 'match_states.pkl')
 DAILY_POSTED_FILE = os.path.join(DATA_DIR, 'daily_schedule_posted.pkl')
 NOTIFIED_EVENTS_FILE = os.path.join(DATA_DIR, 'notified_events.pkl')
+KNOWN_GOALS_FILE = os.path.join(DATA_DIR, 'known_goals.pkl')
+PENDING_GOALS_FILE = os.path.join(DATA_DIR, 'pending_goals.pkl')
 
 # Premier League logo for schedule posts
 PL_LOGO = "https://resources.premierleague.com/premierleague/competitions/competition_1_small.png"
+
+# Goal fallback timing
+GOAL_FALLBACK_SECONDS = 30  # Wait this long for Reddit before posting ESPN fallback
 
 
 class MatchNotificationService:
@@ -38,6 +44,10 @@ class MatchNotificationService:
         self.daily_posted: Dict[str, bool] = load_data(DAILY_POSTED_FILE, {})
         # Track notified events: {match_id_event_type: True}
         self.notified_events: Set[str] = set(load_data(NOTIFIED_EVENTS_FILE, []))
+        # Track known goals per match: {match_id: [goal_keys]}
+        self.known_goals: Dict[str, List[str]] = load_data(KNOWN_GOALS_FILE, {})
+        # Track pending goals waiting for Reddit: {goal_key: {data}}
+        self.pending_goals: Dict[str, Dict[str, Any]] = load_data(PENDING_GOALS_FILE, {})
 
     async def check_and_notify(self) -> None:
         """Main check method - called from periodic loop."""
@@ -49,13 +59,17 @@ class MatchNotificationService:
             if now_uk.hour == 8 and today_str not in self.daily_posted:
                 await self._post_daily_schedule(today_str)
 
-            # Check match state changes
+            # Check match state changes and goals
             matches = await fetch_todays_matches()
             for match in matches:
                 try:
                     await self._check_match_state(match)
+                    await self._check_for_goals(match)
                 except Exception as e:
                     espn_logger.error(f"Error checking match {match.get('id')}: {e}")
+
+            # Process pending goals (post fallback if Reddit didn't cover them)
+            await self._process_pending_goals()
 
         except Exception as e:
             espn_logger.error(f"Error in match notification check: {e}")
@@ -189,6 +203,216 @@ class MatchNotificationService:
             self.notified_events.add(event_key)
             save_data(list(self.notified_events), NOTIFIED_EVENTS_FILE)
             espn_logger.info(f"Posted full time: {score_display}")
+
+    async def _check_for_goals(self, match: Dict[str, Any]) -> None:
+        """Check for new goals in a match and add to pending if not covered by Reddit."""
+        match_id = match.get('id')
+        if not match_id:
+            return
+
+        # Only check for goals in live matches
+        status = match.get('status')
+        if status not in ('STATUS_IN_PROGRESS', 'STATUS_HALFTIME'):
+            return
+
+        home_team = match.get('home_team', {})
+        away_team = match.get('away_team', {})
+        home_name = home_team.get('name', 'Unknown')
+        away_name = away_team.get('name', 'Unknown')
+        home_score = home_team.get('score', '0')
+        away_score = away_team.get('score', '0')
+
+        # Get goals from match data
+        goals = match.get('goals', [])
+        if not goals:
+            return
+
+        # Initialize known goals for this match if needed
+        if match_id not in self.known_goals:
+            self.known_goals[match_id] = []
+
+        for goal in goals:
+            try:
+                goal_key = self._generate_goal_key(match, goal)
+                if not goal_key:
+                    continue
+
+                # Skip if we already know about this goal
+                if goal_key in self.known_goals[match_id]:
+                    continue
+
+                # New goal detected!
+                espn_logger.info(f"New goal detected: {goal_key}")
+
+                # Add to known goals
+                self.known_goals[match_id].append(goal_key)
+                save_data(self.known_goals, KNOWN_GOALS_FILE)
+
+                # Add to pending goals (wait for Reddit)
+                self.pending_goals[goal_key] = {
+                    'detected_at': datetime.now(timezone.utc).isoformat(),
+                    'match_id': match_id,
+                    'home_team': home_name,
+                    'away_team': away_name,
+                    'home_score': home_score,
+                    'away_score': away_score,
+                    'scorer': goal.get('scorer', 'Unknown'),
+                    'minute': goal.get('minute', ''),
+                    'scoring_team': goal.get('team', ''),
+                }
+                save_data(self.pending_goals, PENDING_GOALS_FILE)
+                espn_logger.info(f"Added goal to pending: {goal_key}")
+
+            except Exception as e:
+                espn_logger.error(f"Error processing goal: {e}")
+
+    def _generate_goal_key(self, match: Dict[str, Any], goal: Dict[str, Any]) -> Optional[str]:
+        """Generate a canonical key for a goal event.
+
+        Format: {team1}_vs_{team2}_{score}_{minute}
+        Teams are normalized and sorted alphabetically.
+        """
+        try:
+            home_team = match.get('home_team', {})
+            away_team = match.get('away_team', {})
+            home_name = normalize_team_name(home_team.get('name', ''))
+            away_name = normalize_team_name(away_team.get('name', ''))
+            home_score = home_team.get('score', '0')
+            away_score = away_team.get('score', '0')
+            minute = goal.get('minute', '').split('+')[0]  # Base minute only
+
+            if not home_name or not away_name or not minute:
+                return None
+
+            # Sort teams alphabetically for consistency
+            teams_key = "_vs_".join(sorted([home_name, away_name]))
+            score_key = f"{home_score}-{away_score}"
+
+            return f"{teams_key}_{score_key}_{minute}"
+
+        except Exception as e:
+            espn_logger.error(f"Error generating goal key: {e}")
+            return None
+
+    async def _process_pending_goals(self) -> None:
+        """Process pending goals and post fallback if Reddit didn't cover them."""
+        if not self.pending_goals:
+            return
+
+        now = datetime.now(timezone.utc)
+        posted_scores = load_data(POSTED_SCORES_FILE, {})
+        goals_to_remove = []
+
+        for goal_key, goal_data in self.pending_goals.items():
+            try:
+                detected_at = datetime.fromisoformat(goal_data['detected_at'])
+                elapsed = (now - detected_at).total_seconds()
+
+                # Check if Reddit has posted this goal
+                if self._reddit_posted_goal(goal_key, posted_scores):
+                    espn_logger.info(f"Reddit covered goal: {goal_key}")
+                    goals_to_remove.append(goal_key)
+                    continue
+
+                # Wait for fallback window
+                if elapsed < GOAL_FALLBACK_SECONDS:
+                    continue
+
+                # Reddit didn't post within window - post ESPN fallback
+                espn_logger.info(f"Reddit didn't cover goal after {GOAL_FALLBACK_SECONDS}s, posting fallback: {goal_key}")
+                await self._post_goal_fallback(goal_data)
+                goals_to_remove.append(goal_key)
+
+            except Exception as e:
+                espn_logger.error(f"Error processing pending goal {goal_key}: {e}")
+                # Remove problematic entries to avoid infinite loops
+                goals_to_remove.append(goal_key)
+
+        # Clean up processed goals
+        for key in goals_to_remove:
+            if key in self.pending_goals:
+                del self.pending_goals[key]
+
+        if goals_to_remove:
+            save_data(self.pending_goals, PENDING_GOALS_FILE)
+
+    def _reddit_posted_goal(self, goal_key: str, posted_scores: Dict[str, Dict]) -> bool:
+        """Check if Reddit has posted a matching goal.
+
+        Uses fuzzy matching on the canonical key with minute tolerance.
+        """
+        if not posted_scores:
+            return False
+
+        # Parse the goal key
+        parts = goal_key.rsplit('_', 2)  # teams_key, score, minute
+        if len(parts) != 3:
+            return False
+
+        teams_key, score, minute = parts
+
+        try:
+            goal_minute = int(minute)
+        except ValueError:
+            return False
+
+        # Check for matching Reddit posts with minute tolerance
+        for reddit_key in posted_scores.keys():
+            reddit_parts = reddit_key.rsplit('_', 2)
+            if len(reddit_parts) != 3:
+                continue
+
+            reddit_teams, reddit_score, reddit_minute = reddit_parts
+
+            # Check teams match
+            if reddit_teams != teams_key:
+                continue
+
+            # Check score matches
+            if reddit_score != score:
+                continue
+
+            # Check minute within tolerance (±2 minutes)
+            try:
+                reddit_min = int(reddit_minute)
+                if abs(reddit_min - goal_minute) <= 2:
+                    return True
+            except ValueError:
+                continue
+
+        return False
+
+    async def _post_goal_fallback(self, goal_data: Dict[str, Any]) -> None:
+        """Post ESPN goal fallback notification."""
+        home_team = goal_data.get('home_team', 'Unknown')
+        away_team = goal_data.get('away_team', 'Unknown')
+        home_score = goal_data.get('home_score', '0')
+        away_score = goal_data.get('away_score', '0')
+        scorer = goal_data.get('scorer', 'Unknown')
+        minute = goal_data.get('minute', '')
+        scoring_team = goal_data.get('scoring_team', '')
+
+        # Get team branding for scoring team
+        team_data = map_espn_team_to_config(scoring_team)
+
+        # Format description
+        score_line = f"{home_team} {home_score} - {away_score} {away_team}"
+        scorer_line = f"{scorer} {minute}'" if minute else scorer
+        description = f"{score_line}\n{scorer_line}"
+
+        # Get team color and logo
+        color = 0x00FF00  # Green for goal
+        thumbnail_url = None
+        if team_data and 'data' in team_data:
+            color = team_data['data'].get('color', color)
+            thumbnail_url = team_data['data'].get('logo')
+
+        await self._post_embed(
+            title="GOAL!",
+            description=description,
+            color=color,
+            thumbnail_url=thumbnail_url,
+        )
 
     async def _post_embed(
         self,

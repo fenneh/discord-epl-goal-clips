@@ -355,8 +355,8 @@ async def periodic_check():
             # Check for match notifications (daily schedule, kick-offs, final scores)
             await match_notification_service.check_and_notify()
 
-            # Sleep for 30 seconds between checks to avoid rate limits
-            await asyncio.sleep(30)
+            # Sleep for 10 seconds between checks (ESPN needs faster polling for goal detection)
+            await asyncio.sleep(10)
             
         except asyncpraw.exceptions.RedditAPIException as e:
             app_logger.error(f"Reddit API Exception in periodic check: {str(e)}. Attempting to recreate client on next cycle.")

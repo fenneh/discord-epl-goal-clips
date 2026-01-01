@@ -75,6 +75,7 @@ def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
         'status_description': status_info.get('description'),
         'home_team': None,
         'away_team': None,
+        'goals': [],  # List of goal events
     }
 
     # Parse competitors
@@ -82,7 +83,8 @@ def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
     if not competitions:
         return match
 
-    competitors = competitions[0].get('competitors', [])
+    competition = competitions[0]
+    competitors = competition.get('competitors', [])
     for comp in competitors:
         team_data = comp.get('team', {})
         team_info = {
@@ -98,7 +100,61 @@ def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
         else:
             match['away_team'] = team_info
 
+    # Parse goal events from details array
+    details = competition.get('details', [])
+    match['goals'] = _parse_goal_events(details)
+
     return match
+
+
+def _parse_goal_events(details: List[Dict]) -> List[Dict[str, Any]]:
+    """Parse goal events from ESPN details array.
+
+    Args:
+        details: Details array from ESPN competition
+
+    Returns:
+        List of goal event dictionaries
+    """
+    goals = []
+    for detail in details:
+        try:
+            # Check if this is a goal event
+            event_type = detail.get('type', {}).get('text', '').lower()
+            if 'goal' not in event_type:
+                continue
+
+            # Skip own goals for now (they have different structure)
+            if 'own goal' in event_type:
+                continue
+
+            # Extract goal info
+            clock = detail.get('clock', {})
+            minute = clock.get('displayValue', '').replace("'", "").strip()
+
+            # Get scoring team
+            scoring_team = detail.get('team', {}).get('displayName', '')
+
+            # Get scorer name
+            athletes = detail.get('athletesInvolved', [])
+            scorer = athletes[0].get('displayName', 'Unknown') if athletes else 'Unknown'
+
+            # Get score after goal (if available)
+            score_value = detail.get('scoreValue', 1)
+
+            goal = {
+                'minute': minute,
+                'scorer': scorer,
+                'team': scoring_team,
+                'type': event_type,
+                'score_value': score_value,
+            }
+            goals.append(goal)
+
+        except Exception as e:
+            espn_logger.error(f"Error parsing goal event: {e}")
+
+    return goals
 
 
 def get_match_display_name(match: Dict[str, Any]) -> str:
