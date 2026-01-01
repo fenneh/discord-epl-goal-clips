@@ -1,2 +1,0 @@
-WAIT=10
-http://localhost:$PORT/health
