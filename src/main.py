@@ -28,6 +28,7 @@ from src.utils.score_utils import (
     generate_canonical_key
 )
 from src.utils.url_utils import get_domain_info
+from src.services.match_notification_service import match_notification_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -350,7 +351,10 @@ async def periodic_check():
                 save_data(posted_scores, POSTED_SCORES_FILE) # Save if cleanup occurred
             
             await check_new_posts(reddit_client, None) # Pass the client
-            
+
+            # Check for match notifications (daily schedule, kick-offs, final scores)
+            await match_notification_service.check_and_notify()
+
             # Sleep for 30 seconds between checks to avoid rate limits
             await asyncio.sleep(30)
             
