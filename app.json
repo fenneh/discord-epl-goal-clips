@@ -1,0 +1,40 @@
+{
+    "name": "discord-epl-goal-clips",
+    "description": "Discord Bot that monitors r/soccer for Premier League goals and posts clips",
+    "keywords": [
+        "discord",
+        "bot",
+        "soccer",
+        "premier-league",
+        "goals"
+    ],
+    "scripts": {},
+    "env": {
+        "CLIENT_ID": {
+            "description": "Reddit API Client ID",
+            "required": true
+        },
+        "CLIENT_SECRET": {
+            "description": "Reddit API Client Secret",
+            "required": true
+        },
+        "USER_AGENT": {
+            "description": "Reddit API User Agent",
+            "required": true
+        },
+        "DISCORD_WEBHOOK_URL": {
+            "description": "Discord Webhook URL for posting clips",
+            "required": true
+        },
+        "DISCORD_USERNAME": {
+            "description": "Username for the Discord bot",
+            "value": "Ally",
+            "required": false
+        },
+        "POST_AGE_MINUTES": {
+            "description": "Lookback window for posts in minutes",
+            "value": "5",
+            "required": false
+        }
+    }
+}

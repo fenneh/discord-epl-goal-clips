@@ -82,7 +82,7 @@ premier_league_teams = {
     },
     "Manchester United": {
         "name": "Manchester United",
-        "aliases": ["Manchester United", "Man United", "Man Utd", "United", "MUFC", "Man U"],
+        "aliases": ["Manchester United", "Manchester Utd", "Man United", "Man Utd", "United", "MUFC", "Man U"],
         "color": 0xDA291C,  # Red
         "logo": "https://resources.premierleague.com/premierleague/badges/t1.png"
     },
@@ -121,5 +121,23 @@ premier_league_teams = {
         "aliases": ["Wolves", "Wolverhampton", "Wolverhampton Wanderers", "WWFC"],
         "color": 0xFDB913,  # Gold
         "logo": "https://resources.premierleague.com/premierleague/badges/t39.png"
+    },
+    "Leicester": {
+        "name": "Leicester City",
+        "aliases": ["Leicester", "Leicester City", "The Foxes", "LCFC"],
+        "color": 0x003090,  # Blue
+        "logo": "https://resources.premierleague.com/premierleague/badges/t13.png"
+    },
+    "Southampton": {
+        "name": "Southampton",
+        "aliases": ["Southampton", "The Saints", "Saints", "SFC"],
+        "color": 0xD71920,  # Red
+        "logo": "https://resources.premierleague.com/premierleague/badges/t20.png"
+    },
+    "Ipswich": {
+        "name": "Ipswich Town",
+        "aliases": ["Ipswich", "Ipswich Town", "The Tractor Boys", "ITFC"],
+        "color": 0x0044AA,  # Blue
+        "logo": "https://resources.premierleague.com/premierleague/badges/t40.png"
     }
 }
