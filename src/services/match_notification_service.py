@@ -61,6 +61,7 @@ class MatchNotificationService:
 
             # Check match state changes and goals
             matches = await fetch_todays_matches()
+            espn_logger.info(f"ESPN check: found {len(matches)} matches")
             for match in matches:
                 try:
                     await self._check_match_state(match)
@@ -128,7 +129,7 @@ class MatchNotificationService:
 
         # Detect state transitions
         if previous_status != current_status:
-            espn_logger.debug(f"Match {match_id} state change: {previous_status} -> {current_status}")
+            espn_logger.info(f"Match {match_id} state change: {previous_status} -> {current_status}")
 
             # Kick-off: scheduled -> first half
             if current_status == 'STATUS_FIRST_HALF' and previous_status in (None, 'STATUS_SCHEDULED'):
