@@ -150,22 +150,12 @@ class MatchNotificationService:
         if event_key in self.notified_events:
             return
 
-        home_team = match.get('home_team', {})
-        team_data = map_espn_team_to_config(home_team.get('name', ''))
         match_name = get_match_display_name(match)
-
-        # Get team color and logo
-        color = 0x00FF00  # Green for kick-off
-        thumbnail_url = None
-        if team_data and 'data' in team_data:
-            color = team_data['data'].get('color', color)
-            thumbnail_url = team_data['data'].get('logo')
 
         success = await self._post_embed(
             title="KICK-OFF",
             description=match_name,
-            color=color,
-            thumbnail_url=thumbnail_url,
+            color=0x00FF00,  # Green for kick-off
         )
 
         if success:
@@ -181,22 +171,12 @@ class MatchNotificationService:
         if event_key in self.notified_events:
             return
 
-        home_team = match.get('home_team', {})
-        team_data = map_espn_team_to_config(home_team.get('name', ''))
         score_display = get_match_score_display(match)
-
-        # Get team color and logo
-        color = 0x808080  # Gray default
-        thumbnail_url = None
-        if team_data and 'data' in team_data:
-            color = team_data['data'].get('color', color)
-            thumbnail_url = team_data['data'].get('logo')
 
         success = await self._post_embed(
             title="FULL TIME",
             description=score_display,
-            color=color,
-            thumbnail_url=thumbnail_url,
+            color=0x808080,  # Gray
         )
 
         if success:
