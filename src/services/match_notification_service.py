@@ -130,8 +130,8 @@ class MatchNotificationService:
         if previous_status != current_status:
             espn_logger.debug(f"Match {match_id} state change: {previous_status} -> {current_status}")
 
-            # Kick-off: scheduled -> in progress
-            if current_status == 'STATUS_IN_PROGRESS' and previous_status in (None, 'STATUS_SCHEDULED'):
+            # Kick-off: scheduled -> first half
+            if current_status == 'STATUS_FIRST_HALF' and previous_status in (None, 'STATUS_SCHEDULED'):
                 await self._notify_kickoff(match)
 
             # Full time: any -> full time
@@ -192,7 +192,7 @@ class MatchNotificationService:
 
         # Only check for goals in live matches
         status = match.get('status')
-        if status not in ('STATUS_IN_PROGRESS', 'STATUS_HALFTIME'):
+        if status not in ('STATUS_FIRST_HALF', 'STATUS_SECOND_HALF', 'STATUS_HALFTIME'):
             return
 
         home_team = match.get('home_team', {})
