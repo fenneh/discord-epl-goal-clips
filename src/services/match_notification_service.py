@@ -63,21 +63,17 @@ class MatchNotificationService:
             matches = await fetch_todays_matches()
             espn_logger.info(f"ESPN check: found {len(matches)} matches")
 
-            # Collect kick-offs to batch them
-            kickoff_matches = []
+            # Check for kick-offs based on scheduled time
+            await self._check_kickoffs_by_time(matches)
 
             for match in matches:
                 try:
-                    kickoff = await self._check_match_state(match)
-                    if kickoff:
-                        kickoff_matches.append(match)
+                    # Check for full-time
+                    await self._check_for_fulltime(match)
+                    # Check for goals
                     await self._check_for_goals(match)
                 except Exception as e:
                     espn_logger.error(f"Error checking match {match.get('id')}: {e}")
-
-            # Post batched kick-off notification
-            if kickoff_matches:
-                await self._notify_kickoffs_batched(kickoff_matches)
 
             # Process pending goals (post fallback if Reddit didn't cover them)
             await self._process_pending_goals()
@@ -128,57 +124,62 @@ class MatchNotificationService:
         except Exception as e:
             espn_logger.error(f"Error posting daily schedule: {e}")
 
-    async def _check_match_state(self, match: Dict[str, Any]) -> bool:
-        """Check for state changes and notify accordingly.
+    def _parse_match_time(self, date_str: str) -> Optional[datetime]:
+        """Parse ESPN date string to datetime."""
+        if not date_str:
+            return None
+        try:
+            # Handle both Z suffix and +00:00 format
+            if date_str.endswith('Z'):
+                date_str = date_str[:-1] + '+00:00'
+            return datetime.fromisoformat(date_str)
+        except Exception:
+            return None
 
-        Returns:
-            True if this is a kick-off that should be batched, False otherwise.
-        """
-        match_id = match.get('id')
-        if not match_id:
-            return False
+    async def _check_kickoffs_by_time(self, matches: List[Dict[str, Any]]) -> None:
+        """Check for kick-offs based on scheduled time and post batched by time slot."""
+        now = datetime.now(timezone.utc)
 
-        current_status = match.get('status')
-        previous_status = self.match_states.get(match_id)
-        is_kickoff = False
+        # Group matches by scheduled time that should have kicked off
+        time_slots: Dict[str, List[Dict[str, Any]]] = {}
 
-        # Detect state transitions
-        if previous_status != current_status:
-            espn_logger.info(f"Match {match_id} state change: {previous_status} -> {current_status}")
-
-            # Kick-off: scheduled -> first half
-            if current_status == 'STATUS_FIRST_HALF' and previous_status in (None, 'STATUS_SCHEDULED'):
-                is_kickoff = True
-
-            # Full time: any -> full time
-            elif current_status == 'STATUS_FULL_TIME' and previous_status != 'STATUS_FULL_TIME':
-                await self._notify_final_score(match)
-
-            # Update state
-            self.match_states[match_id] = current_status
-            save_data(self.match_states, MATCH_STATE_FILE)
-
-        return is_kickoff
-
-    async def _notify_kickoffs_batched(self, matches: List[Dict[str, Any]]) -> None:
-        """Send batched kick-off notification for multiple matches."""
-        # Filter out already notified matches
-        to_notify = []
         for match in matches:
             match_id = match.get('id')
-            event_key = f"{match_id}_kickoff"
-            if event_key not in self.notified_events:
-                to_notify.append(match)
+            if not match_id:
+                continue
 
-        if not to_notify:
+            event_key = f"{match_id}_kickoff"
+            if event_key in self.notified_events:
+                continue
+
+            # Get scheduled time
+            scheduled_time = self._parse_match_time(match.get('date'))
+            if not scheduled_time:
+                continue
+
+            # Check if kick-off time has passed
+            if now >= scheduled_time:
+                # Use the scheduled time as the grouping key
+                time_key = scheduled_time.isoformat()
+                if time_key not in time_slots:
+                    time_slots[time_key] = []
+                time_slots[time_key].append(match)
+
+        # Post one notification per time slot
+        for time_key, slot_matches in time_slots.items():
+            await self._notify_kickoffs_batched(slot_matches)
+
+    async def _notify_kickoffs_batched(self, matches: List[Dict[str, Any]]) -> None:
+        """Send batched kick-off notification for matches at the same time."""
+        if not matches:
             return
 
         # Build description with all matches
-        match_names = [get_match_display_name(m) for m in to_notify]
+        match_names = [get_match_display_name(m) for m in matches]
         description = '\n'.join(match_names)
 
         # Use singular or plural title
-        title = "KICK-OFF" if len(to_notify) == 1 else "KICK-OFFS"
+        title = "KICK-OFF" if len(matches) == 1 else "KICK-OFFS"
 
         success = await self._post_embed(
             title=title,
@@ -187,12 +188,31 @@ class MatchNotificationService:
         )
 
         if success:
-            for match in to_notify:
+            for match in matches:
                 match_id = match.get('id')
                 event_key = f"{match_id}_kickoff"
                 self.notified_events.add(event_key)
             save_data(list(self.notified_events), NOTIFIED_EVENTS_FILE)
             espn_logger.info(f"Posted kick-offs: {', '.join(match_names)}")
+
+    async def _check_for_fulltime(self, match: Dict[str, Any]) -> None:
+        """Check if match has ended and notify."""
+        match_id = match.get('id')
+        if not match_id:
+            return
+
+        current_status = match.get('status')
+        previous_status = self.match_states.get(match_id)
+
+        # Detect full-time
+        if current_status == 'STATUS_FULL_TIME' and previous_status != 'STATUS_FULL_TIME':
+            espn_logger.info(f"Match {match_id} ended: {previous_status} -> {current_status}")
+            await self._notify_final_score(match)
+
+        # Update state if changed
+        if previous_status != current_status:
+            self.match_states[match_id] = current_status
+            save_data(self.match_states, MATCH_STATE_FILE)
 
     async def _notify_final_score(self, match: Dict[str, Any]) -> None:
         """Send final score notification."""
