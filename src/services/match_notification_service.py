@@ -157,8 +157,9 @@ class MatchNotificationService:
             if not scheduled_time:
                 continue
 
-            # Check if kick-off time has passed
-            if now >= scheduled_time:
+            # Check if kick-off time has passed but match hasn't ended
+            status = match.get('status')
+            if now >= scheduled_time and status != 'STATUS_FULL_TIME':
                 # Use the scheduled time as the grouping key
                 time_key = scheduled_time.isoformat()
                 if time_key not in time_slots:
