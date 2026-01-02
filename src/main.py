@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Set, Dict, List, Optional
 
 import asyncpraw
+import asyncpraw.exceptions
 from fastapi import FastAPI, BackgroundTasks
 
 from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES

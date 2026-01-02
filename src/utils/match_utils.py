@@ -1,7 +1,7 @@
 """Utilities for match notification features."""
 
 from datetime import datetime, timezone
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 
 import pytz
 
@@ -37,7 +37,9 @@ def map_espn_team_to_config(espn_team_name: str) -> Optional[Dict[str, Any]]:
             return {'name': team_key, 'data': team_data, 'is_scoring': None}
 
         # Check aliases
-        for alias in team_data.get('aliases', []):
+        raw_aliases = team_data.get('aliases', [])
+        aliases: List[str] = raw_aliases if isinstance(raw_aliases, list) else []
+        for alias in aliases:
             alias_lower = alias.lower()
             if alias_lower == espn_lower:
                 return {'name': team_key, 'data': team_data, 'is_scoring': None}

@@ -98,15 +98,19 @@ async def post_to_discord(
 
 async def post_mp4_link(title: str, mp4_url: str, team_data: Optional[Dict] = None) -> bool:
     """Post MP4 link to Discord webhook.
-    
+
     Args:
         title (str): Post title
         mp4_url (str): MP4 URL to post
         team_data (dict, optional): Team data for customizing webhook appearance
-        
+
     Returns:
         bool: True if post was successful, False otherwise
     """
+    if not DISCORD_WEBHOOK_URL:
+        webhook_logger.error("Discord webhook URL not configured")
+        return False
+
     webhook_logger.info(f"Posting MP4 link: {mp4_url}")
     
     # Just send the raw MP4 URL as content

@@ -145,12 +145,12 @@ def normalize_team_name(team_name: str) -> str:
             
     return name.strip()
 
-def extract_goal_info(title: str) -> Optional[Dict[str, str]]:
+def extract_goal_info(title: str) -> Optional[Dict[str, Optional[str]]]:
     """Extract goal information from title.
-    
+
     Args:
         title (str): Post title
-        
+
     Returns:
         dict: Dictionary containing score, minute, and scorer if found
     """
@@ -230,17 +230,21 @@ def extract_minutes(minute_str: str) -> int:
         return int(base) + int(injury)
     return int(minute_str)
 
-def generate_canonical_key(goal_info: Dict[str, str]) -> Optional[str]:
+def generate_canonical_key(goal_info: Dict[str, Optional[str]]) -> Optional[str]:
     """Generates a consistent key for a goal event."""
-    if not goal_info or not goal_info.get('team1') or not goal_info.get('team2') or not goal_info.get('score') or not goal_info.get('minute'):
+    team1 = goal_info.get('team1')
+    team2 = goal_info.get('team2')
+    score = goal_info.get('score')
+    minute = goal_info.get('minute')
+    if not goal_info or not team1 or not team2 or not score or not minute:
         app_logger.debug(f"Cannot generate canonical key, missing info: {goal_info}")
         return None
     # Sort team names alphabetically to handle "TeamA vs TeamB" and "TeamB vs TeamA" the same
-    teams_key = "_vs_".join(sorted([goal_info['team1'], goal_info['team2']]))
+    teams_key = "_vs_".join(sorted([team1, team2]))
     # Use base minute to handle minor variations in injury time reporting
-    base_minute = goal_info['minute'].split('+')[0]
+    base_minute = minute.split('+')[0]
     # Normalize score by removing spaces and brackets
-    score_key = re.sub(r'[\\[\\]\\s]', '', goal_info['score'])
+    score_key = re.sub(r'[\\[\\]\\s]', '', score)
     key = f"{teams_key}_{score_key}_{base_minute}"
     app_logger.debug(f"Generated canonical key: {key}")
     return key

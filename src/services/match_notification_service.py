@@ -124,7 +124,7 @@ class MatchNotificationService:
         except Exception as e:
             espn_logger.error(f"Error posting daily schedule: {e}")
 
-    def _parse_match_time(self, date_str: str) -> Optional[datetime]:
+    def _parse_match_time(self, date_str: Optional[str]) -> Optional[datetime]:
         """Parse ESPN date string to datetime."""
         if not date_str:
             return None
@@ -211,7 +211,7 @@ class MatchNotificationService:
             await self._notify_final_score(match)
 
         # Update state if changed
-        if previous_status != current_status:
+        if previous_status != current_status and current_status is not None:
             self.match_states[match_id] = current_status
             save_data(self.match_states, MATCH_STATE_FILE)
 

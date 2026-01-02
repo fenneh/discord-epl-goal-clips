@@ -1,10 +1,11 @@
 """Reddit service for fetching goal clips."""
 
 import re
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, List, overload, Literal, Union
 
 import aiohttp
 import asyncpraw
+import asyncpraw.exceptions
 from bs4 import BeautifulSoup
 
 from src.config import CLIENT_ID, CLIENT_SECRET, USER_AGENT
@@ -34,15 +35,22 @@ def clean_text(text: str) -> str:
     """Clean text to handle unicode characters."""
     return text.encode('ascii', 'ignore').decode('utf-8')
 
-def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[Union[str, Dict[str, Any]]]:
+@overload
+def find_team_in_title(title: str, include_metadata: Literal[True]) -> Optional[Dict[str, Any]]: ...
+@overload
+def find_team_in_title(title: str, include_metadata: Literal[False] = ...) -> Optional[str]: ...
+@overload
+def find_team_in_title(title: str, include_metadata: bool = ...) -> Optional[Dict[str, Any] | str]: ...
+
+def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[Dict[str, Any] | str]:
     """Find Premier League team in post title.
-    
+
     Args:
         title (str): Post title to search
         include_metadata (bool): If True, return team data dictionary, otherwise just team name
-        
+
     Returns:
-        Optional[Union[str, Dict[str, Any]]]: Team name/data if found, None otherwise
+        Team name/data if found, None otherwise
     """
     if not title:
         return None
@@ -76,9 +84,9 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
         
         # If no exact match, try word boundary matches
         for pattern in team_patterns:
-            if re.search(pattern, text):
+            match = re.search(pattern, text)
+            if match:
                 # Additional check: make sure we don't match part of a longer word/phrase
-                match = re.search(pattern, text)
                 start, end = match.span()
                 
                 # Check character before match (if not at start)
@@ -231,7 +239,8 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[U
              # Check if it was potentially an alias match like 'United'
              # Be stricter: avoid short/ambiguous aliases in fallback
              is_ambiguous_alias = False
-             aliases = [a.lower() for a in team_data.get('aliases', [])]
+             raw_aliases = team_data.get('aliases', [])
+             aliases: List[str] = [a.lower() for a in raw_aliases] if isinstance(raw_aliases, list) else []
              for alias in aliases:
                   # Example ambiguity check: alias is short and appears in title
                  if len(alias) <= 6 and re.search(rf'\b{re.escape(alias)}\b', title_lower):
@@ -295,7 +304,7 @@ async def extract_mp4_link(submission) -> Optional[str]:
         domain_info = get_domain_info(submission.url)
         matched_base = domain_info.get('matched_base') if domain_info else None
 
-        if matched_base:
+        if matched_base and domain_info:
             app_logger.info(f"Using video extractor for {domain_info.get('full_domain')} (base: {matched_base})")
             # Await the async call
             mp4_url = await video_extractor.extract_mp4_url(submission.url)
