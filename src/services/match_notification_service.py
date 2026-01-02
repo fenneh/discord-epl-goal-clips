@@ -60,7 +60,7 @@ class MatchNotificationService:
                 await self._post_daily_schedule(today_str)
 
             # Check match state changes and goals
-            matches = await fetch_todays_matches()
+            matches = fetch_todays_matches()
             espn_logger.info(f"ESPN check: found {len(matches)} matches")
 
             # Check for kick-offs based on scheduled time
@@ -84,7 +84,7 @@ class MatchNotificationService:
     async def _post_daily_schedule(self, date_str: str) -> None:
         """Post the daily schedule of matches."""
         try:
-            matches = await fetch_todays_matches()
+            matches = fetch_todays_matches()
             if not matches:
                 espn_logger.info(f"No matches scheduled for {date_str}")
                 # Still mark as posted to avoid repeated API calls

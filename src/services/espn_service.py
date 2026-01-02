@@ -1,38 +1,45 @@
 """ESPN API service for fetching Premier League match data."""
 
-from datetime import datetime, timezone
+from datetime import date
 from typing import List, Dict, Any, Optional
-import aiohttp
+
+from espn_sports_api import Soccer
 
 from src.utils.logger import setup_logger
+from src.utils.match_utils import get_current_uk_time
 
 espn_logger = setup_logger('espn_service', 'espn.log')
 
-ESPN_SCOREBOARD_URL = "http://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
+epl = Soccer(league="epl")
 
 
-async def fetch_todays_matches() -> List[Dict[str, Any]]:
-    """Fetch all Premier League matches for today from ESPN API.
+def fetch_matches_for_date(target_date: date) -> List[Dict[str, Any]]:
+    """Fetch all Premier League matches for a specific date.
+
+    Args:
+        target_date: The date to fetch matches for
 
     Returns:
         List of match dictionaries with standardized format
     """
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(ESPN_SCOREBOARD_URL, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if response.status != 200:
-                    espn_logger.error(f"ESPN API error: {response.status}")
-                    return []
-                data = await response.json()
-                matches = _parse_events(data.get('events', []))
-                espn_logger.debug(f"Fetched {len(matches)} matches from ESPN")
-                return matches
-    except aiohttp.ClientError as e:
+        data = epl.on_date(target_date)
+        matches = _parse_events(data.get('events', []))
+        espn_logger.debug(f"Fetched {len(matches)} matches for {target_date}")
+        return matches
+    except Exception as e:
         espn_logger.error(f"ESPN API request failed: {e}")
         return []
-    except Exception as e:
-        espn_logger.error(f"Unexpected error fetching ESPN data: {e}")
-        return []
+
+
+def fetch_todays_matches() -> List[Dict[str, Any]]:
+    """Fetch all Premier League matches for today (UK timezone).
+
+    Returns:
+        List of match dictionaries with standardized format
+    """
+    today_uk = get_current_uk_time().date()
+    return fetch_matches_for_date(today_uk)
 
 
 def _parse_events(events: List[Dict]) -> List[Dict[str, Any]]:
@@ -70,15 +77,14 @@ def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
         'id': event.get('id'),
         'name': event.get('name'),
         'short_name': event.get('shortName'),
-        'date': event.get('date'),  # UTC ISO format
+        'date': event.get('date'),
         'status': status_info.get('name'),
         'status_description': status_info.get('description'),
         'home_team': None,
         'away_team': None,
-        'goals': [],  # List of goal events
+        'goals': [],
     }
 
-    # Parse competitors
     competitions = event.get('competitions', [])
     if not competitions:
         return match
@@ -100,7 +106,6 @@ def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
         else:
             match['away_team'] = team_info
 
-    # Parse goal events from details array
     details = competition.get('details', [])
     match['goals'] = _parse_goal_events(details)
 
@@ -119,27 +124,21 @@ def _parse_goal_events(details: List[Dict]) -> List[Dict[str, Any]]:
     goals = []
     for detail in details:
         try:
-            # Check if this is a goal event
             event_type = detail.get('type', {}).get('text', '').lower()
             if 'goal' not in event_type:
                 continue
 
-            # Skip own goals for now (they have different structure)
             if 'own goal' in event_type:
                 continue
 
-            # Extract goal info
             clock = detail.get('clock', {})
             minute = clock.get('displayValue', '').replace("'", "").strip()
 
-            # Get scoring team
             scoring_team = detail.get('team', {}).get('displayName', '')
 
-            # Get scorer name
             athletes = detail.get('athletesInvolved', [])
             scorer = athletes[0].get('displayName', 'Unknown') if athletes else 'Unknown'
 
-            # Get score after goal (if available)
             score_value = detail.get('scoreValue', 1)
 
             goal = {
