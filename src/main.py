@@ -12,14 +12,12 @@ import asyncpraw.exceptions
 from fastapi import FastAPI, BackgroundTasks
 
 from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES
-from src.config.domains import base_domains
 from src.services.discord_service import post_to_discord, post_mp4_link
 from src.services.reddit_service import (
     create_reddit_client,
     find_team_in_title,
     extract_mp4_link
 )
-from src.services.video_service import video_extractor
 from src.utils.logger import app_logger
 from src.utils.persistence import save_data, load_data
 from src.utils.score_utils import (
@@ -97,8 +95,17 @@ def contains_excluded_term(title: str) -> bool:
     """
     title_lower = title.lower()
     
-    # Add word boundaries to prevent partial matches
-    excluded_patterns = [rf'\b{re.escape(term)}\b' for term in ['test']]
+    excluded_terms = [
+        "pre match thread",
+        "pre-match thread",
+        "match thread",
+        "post match thread",
+        "post-match thread",
+        "half time",
+        "full time",
+        "test",
+    ]
+    excluded_patterns = [rf'\b{re.escape(term)}\b' for term in excluded_terms]
     return any(re.search(pattern, title_lower) for pattern in excluded_patterns)
 
 async def extract_mp4_with_retries(submission, max_retries: int = 30, delay: int = 10) -> Optional[str]:
@@ -445,10 +452,6 @@ async def test_specific_threads(thread_ids: List[str], ignore_posted: bool = Fal
     await reddit.close()  # Close the Reddit client session
     app_logger.info("Test complete. Processed {} threads.".format(len(thread_ids)))
 
-def clean_text(text: str) -> str:
-    """Clean text to handle unicode characters."""
-    return text.encode('ascii', 'ignore').decode('utf-8')
-
 @app.get("/check")
 async def check_posts(background_tasks: BackgroundTasks):
     """Endpoint to manually trigger post checking.
@@ -499,10 +502,6 @@ if __name__ == "__main__":
     elif args.test_threads:
         asyncio.run(test_specific_threads(args.test_threads, ignore_posted=True))
     else:
-        # Test specific post
-        test_post_id = "1hj95zl"  # Aston Villa 1 0 Manchester City goal
-        asyncio.run(test_specific_threads([test_post_id], ignore_posted=True))
-        
         # Start the FastAPI app
         import uvicorn
         uvicorn.run(app, host="127.0.0.1", port=8000)

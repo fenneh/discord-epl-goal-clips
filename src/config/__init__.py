@@ -20,7 +20,7 @@ DISCORD_AVATAR_URL = os.getenv('DISCORD_AVATAR_URL', 'https://cdn1.rangersnews.u
 # Post age cutoff in minutes (default 5 minutes)
 POST_AGE_MINUTES = int(os.getenv('POST_AGE_MINUTES', '5'))
 
-# Allowed domains for goal clips (REMOVED - Logic uses base_domains from domains.py/filters.py)
+# Allowed domains for goal clips (REMOVED - Logic uses base_domains from filters.py)
 # ALLOWED_DOMAINS = [
 #     'streamff.com',
 #     'streamin.me',

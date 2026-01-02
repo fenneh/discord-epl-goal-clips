@@ -25,6 +25,9 @@ def setup_logger(name, log_file, level=logging.INFO, max_bytes=10*1024*1024, bac
     # Create logger
     logger = logging.getLogger(name)
     logger.setLevel(level)
+
+    if logger.handlers:
+        return logger
     
     # Create formatters
     file_formatter = logging.Formatter(

@@ -1,42 +1,11 @@
 """Utilities for handling score patterns and duplicates."""
 
 import re
-import time
 import unicodedata
 from datetime import datetime, timezone, timedelta
-from difflib import SequenceMatcher
 from typing import Dict, Optional
+
 from src.utils.logger import app_logger
-
-def get_similarity_ratio(a: str, b: str) -> float:
-    """Return a ratio of similarity between two strings.
-    
-    Args:
-        a (str): First string
-        b (str): Second string
-        
-    Returns:
-        float: Similarity ratio between 0 and 1
-    """
-    return SequenceMatcher(None, a, b).ratio()
-
-def normalize_score_pattern(title: str) -> Optional[str]:
-    """Extract and normalize just the score pattern.
-    
-    Args:
-        title (str): Post title
-        
-    Returns:
-        str: Normalized score pattern if found, None otherwise
-    """
-    # Extract score pattern and minute
-    score_pattern = re.search(r'(\d+\s*-\s*\[\d+\]|\[\d+\]\s*-\s*\d+)', title)
-    minute_pattern = re.search(r'(\d+)\'', title)
-    
-    if not score_pattern or not minute_pattern:
-        return None
-        
-    return f"{score_pattern.group(1)}_{minute_pattern.group(1)}'"
 
 def normalize_player_name(name: str) -> str:
     """Normalize player name to handle different formats.

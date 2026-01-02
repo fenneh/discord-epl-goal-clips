@@ -2,14 +2,11 @@
 
 import asyncio
 import re
-import traceback
-from typing import Optional, Dict
-from urllib.parse import urlparse
+from typing import Optional
 
 import aiohttp
 from bs4 import BeautifulSoup
 
-from src.config.filters import base_domains
 from src.utils.logger import app_logger
 
 class VideoExtractor:

@@ -3,10 +3,7 @@
 import re
 from typing import Optional, Dict, Any, List, overload, Literal, Union
 
-import aiohttp
 import asyncpraw
-import asyncpraw.exceptions
-from bs4 import BeautifulSoup
 
 from src.config import CLIENT_ID, CLIENT_SECRET, USER_AGENT
 from src.config.teams import premier_league_teams
@@ -30,10 +27,6 @@ async def create_reddit_client() -> asyncpraw.Reddit:
         check_for_updates=False,  # Disable update checks
         read_only=True  # Enable read-only mode since we only need to read
     )
-
-def clean_text(text: str) -> str:
-    """Clean text to handle unicode characters."""
-    return text.encode('ascii', 'ignore').decode('utf-8')
 
 @overload
 def find_team_in_title(title: str, include_metadata: Literal[True]) -> Optional[Dict[str, Any]]: ...

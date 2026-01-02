@@ -27,8 +27,8 @@ DISCORD_WEBHOOK_URL=discord_webhook_url
 ## Run
 
 ```
-pip install -r requirements.txt
-python -m src.main
+uv sync --frozen
+uv run python -m src.main
 ```
 
 ## Docker
