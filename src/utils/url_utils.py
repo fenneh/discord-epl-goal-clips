@@ -86,5 +86,5 @@ def get_base_domain(url: str) -> str:
         # If no match found, return the full domain
         return domain
         
-    except Exception as e:
+    except Exception:
         return url  # Return original URL if parsing fails

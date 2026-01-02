@@ -3,7 +3,7 @@
 import pickle
 import os
 from datetime import datetime
-from typing import Set, Dict, Any, Union
+from typing import Dict, Any
 from src.utils.logger import app_logger
 
 def _convert_to_timestamp(data: Dict[str, Any]) -> Dict[str, Any]:

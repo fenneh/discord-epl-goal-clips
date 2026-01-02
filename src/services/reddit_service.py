@@ -145,7 +145,6 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[D
 
                 # Prefer the team string associated with the bracket
                 scoring_team_str = team1_str if is_team1_scoring else team2_str
-                other_team_str = team2_str if is_team1_scoring else team1_str
 
                 # If brackets appear in both or neither part (e.g., [1-0]), scoring team is ambiguous here
                 if is_team1_scoring == is_team2_scoring:

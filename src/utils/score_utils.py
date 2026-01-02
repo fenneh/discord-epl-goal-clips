@@ -83,7 +83,6 @@ def normalize_team_name(team_name: str) -> str:
         'brentford': ['bees'],
         'fulham': ['cottagers', 'ffc'],
         'everton': ['toffees', 'efc'],
-        'leeds united': ['leeds', 'lufc', 'whites'],
     }
     
     # Try to match team name with known variations first
@@ -250,10 +249,9 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
 
 def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> bool:
     """Remove scores older than a defined threshold (e.g., 24 hours)."""
-    CLEANUP_THRESHOLD_HOURS = 24 # Example threshold
+    CLEANUP_THRESHOLD_HOURS = 24
     now = datetime.now(timezone.utc)
     keys_to_delete = []
-    initial_count = len(posted_scores)
 
     for key, data in posted_scores.items():
         try:

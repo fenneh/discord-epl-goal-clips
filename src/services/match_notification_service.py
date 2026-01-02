@@ -1,7 +1,7 @@
 """Match notification service for posting Premier League match updates."""
 
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Set, Any, Optional, List
 
 import aiohttp
@@ -13,7 +13,6 @@ from src.utils.match_utils import (
     format_match_time_uk,
     get_current_uk_time,
     get_today_uk_date_str,
-    UK_TZ,
     PL_COLOR,
 )
 from src.utils.persistence import save_data, load_data

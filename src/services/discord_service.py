@@ -7,7 +7,6 @@ from typing import Dict, Optional
 import aiohttp
 
 from src.config import DISCORD_WEBHOOK_URL, DISCORD_USERNAME, DISCORD_AVATAR_URL
-from src.config.teams import premier_league_teams
 from src.utils.logger import webhook_logger
 
 def clean_text(text: str) -> str:
@@ -33,7 +32,7 @@ async def post_to_discord(
     video_url = lines[1] if len(lines) > 1 else None
     reddit_url = lines[2] if len(lines) > 2 else None
 
-    webhook_logger.info(f"Preparing Discord message:")
+    webhook_logger.info("Preparing Discord message:")
     webhook_logger.info(f"Title: {title}")
     webhook_logger.info(f"Video URL: {video_url}")
     webhook_logger.info(f"Reddit URL: {reddit_url}")

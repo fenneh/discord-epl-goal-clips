@@ -221,7 +221,7 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             elif not ignore_duplicates:
                  # Check if this is a duplicate score using the canonical key
                  if is_duplicate_score(title, posted_scores, current_time, url): # is_duplicate_score now uses the key internally
-                     app_logger.info(f"[SKIP] Duplicate score detected based on canonical key.")
+                     app_logger.info("[SKIP] Duplicate score detected based on canonical key.")
                      app_logger.info(f"Title:      {title}")
                      app_logger.info(f"Reddit URL: {reddit_url}")
                      return False
@@ -283,7 +283,7 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         app_logger.info(f"Extracted MP4 URL: {mp4_url}")
         
         if mp4_url and mp4_url != original_url:  # Only post MP4 if it's different from original URL
-            app_logger.info(f"Posting MP4 URL (different from original)")
+            app_logger.info("Posting MP4 URL (different from original)")
             # Send just the raw MP4 URL
             await post_mp4_link(title, mp4_url, team_data)
         else:

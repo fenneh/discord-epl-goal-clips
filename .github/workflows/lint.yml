@@ -1,9 +1,9 @@
-name: Pylint
+name: Lint
 
 on: [push]
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -13,5 +13,5 @@ jobs:
       run: uv python install 3.11
     - name: Install dependencies
       run: uv sync --frozen
-    - name: Analysing the code with pylint
-      run: uv run pylint $(git ls-files '*.py')
+    - name: Lint with ruff
+      run: uv run ruff check .

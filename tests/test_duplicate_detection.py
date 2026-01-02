@@ -132,5 +132,5 @@ def test_team_logo_detection():
         
         assert result is not None, "Failed to find any team"
         assert result['name'] == case['expected_team'], f"Expected {case['expected_team']}, got {result['name']}"
-        assert result['data']['logo'] == case['expected_logo'], f"Wrong logo URL"
-        assert result['is_scoring'] == case['expected_is_scoring'], f"Wrong scoring flag"
+        assert result['data']['logo'] == case['expected_logo'], "Wrong logo URL"
+        assert result['is_scoring'] == case['expected_is_scoring'], "Wrong scoring flag"
