@@ -71,8 +71,8 @@ from src.services.reddit_service import find_team_in_title
             30,
         ),
         (
-            "Leicester 0 - [2] Wolves - Rodrigo Gomes 36'",
-            "Leicester City 0 - [2] Wolves - Rodrigo Gomes 36'",
+            "Leeds 0 - [2] Wolves - Rodrigo Gomes 36'",
+            "Leeds United 0 - [2] Wolves - Rodrigo Gomes 36'",
             True,
             30,
         ),
@@ -117,10 +117,9 @@ def test_duplicate_detection(title1, title2, should_match, time_diff):
 
 def test_team_logo_detection():
     """Test that we get the correct team logo for goals."""
-    # Test cases
     test_cases = [
         {
-            "title": "Leicester City 0 - [1] Wolves - Goncalo Guedes 19'",
+            "title": "Leeds United 0 - [1] Wolves - Goncalo Guedes 19'",
             "expected_team": "Wolves",
             "expected_logo": "https://resources.premierleague.com/premierleague/badges/t39.png",
             "expected_is_scoring": True

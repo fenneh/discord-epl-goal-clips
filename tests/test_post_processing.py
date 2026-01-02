@@ -10,6 +10,7 @@ class MockSubmission:
         self.title = title
         self.url = url
         self.created_utc = created_utc
+        self.permalink = f"/r/soccer/comments/test/{title.replace(' ', '_')[:20]}"
 
 @pytest.mark.parametrize("title,should_match", [
     # Standard formats

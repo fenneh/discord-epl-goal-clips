@@ -8,50 +8,40 @@ from typing import Dict, Optional
 from src.utils.logger import app_logger
 
 def normalize_player_name(name: str) -> str:
-    """Normalize player name to handle different formats.
-    
-    Handles cases like:
-    - "Gabriel Jesus" -> "jesus"
-    - "G. Jesus" -> "jesus"
-    - "Eddie Nketiah" -> "nketiah"
-    - "E. Nketiah" -> "nketiah"
-    - "van Dijk" -> "van dijk"
-    - "L. Díaz" -> "diaz"
-    - "Luis Diaz" -> "diaz"
-    
+    """Normalize player name to surname for duplicate detection.
+
+    Extracts the distinctive surname from various name formats. For duplicate
+    detection, we only need the surname since that's the consistent identifier
+    across different title formats (e.g., "G. Jesus" vs "Gabriel Jesus").
+
+    Examples:
+        "Gabriel Jesus" -> "jesus"
+        "G. Jesus" -> "jesus"
+        "Virgil van Dijk" -> "dijk"  (surname is "Dijk", "van" is just a prefix)
+        "V. van Dijk" -> "dijk"
+        "L. Díaz" -> "diaz"
+
     Args:
-        name (str): Player name to normalize
-        
+        name: Player name in any format
+
     Returns:
-        str: Normalized name
+        Normalized surname for comparison
     """
-    # Convert to lowercase
     name = name.lower()
-    
-    # Remove accents and special characters
+
+    # Remove accents (e.g., "Díaz" -> "Diaz")
     name = ''.join(c for c in unicodedata.normalize('NFKD', name)
                   if not unicodedata.combining(c))
-    
-    # Remove any remaining non-alphanumeric characters except spaces
+
+    # Remove punctuation - this strips periods before we check for ". "
+    # which means "V. van Dijk" becomes "v van dijk" and we take last word
     name = re.sub(r'[^a-z0-9\s]', '', name)
-    
-    # Handle abbreviated first names (e.g., "G. Jesus" -> "jesus")
-    if '. ' in name:
-        name = name.split('. ')[1]
-    elif len(name.split()) > 1:
-        # For full names, take the last part
+
+    # Extract surname: take the last word from the name
+    # This handles both "Gabriel Jesus" and "V van Dijk" -> last word
+    if len(name.split()) > 1:
         name = name.split()[-1]
-    
-    # Special cases for multi-word last names
-    multi_word_prefixes = ['van', 'de', 'den', 'der', 'dos', 'el', 'al']
-    words = name.split()
-    
-    if len(words) > 1:
-        # Check if we have a multi-word last name
-        for i, word in enumerate(words[:-1]):
-            if word in multi_word_prefixes:
-                return ' '.join(words[i:])
-    
+
     return name.strip()
 
 def normalize_team_name(team_name: str) -> str:
@@ -74,8 +64,8 @@ def normalize_team_name(team_name: str) -> str:
     # Make sure team names in keys are normalized lowercase too
     replacements = {
         'arsenal': ['gunners'],
-        'manchester united': ['man united', 'man utd', 'manchester utd', 'united', 'mufc'],
-        'manchester city': ['man city', 'city', 'mcfc'],
+        'manchester united': ['man united', 'man utd', 'man u', 'manchester utd', 'mufc'],
+        'manchester city': ['man city', 'mcfc'],
         'tottenham': ['spurs', 'thfc', 'tottenham hotspur', 'hotspur'],
         'wolverhampton wanderers': ['wolves', 'wwfc', 'wanderers'],
         'brighton & hove albion': ['brighton', 'brighton and hove', 'bha'],
@@ -92,7 +82,8 @@ def normalize_team_name(team_name: str) -> str:
         'bournemouth': ['afc bournemouth', 'cherries'],
         'brentford': ['bees'],
         'fulham': ['cottagers', 'ffc'],
-        'everton': ['toffees', 'efc']
+        'everton': ['toffees', 'efc'],
+        'leeds united': ['leeds', 'lufc', 'whites'],
     }
     
     # Try to match team name with known variations first
