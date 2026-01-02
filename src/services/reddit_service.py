@@ -55,7 +55,10 @@ def find_team_in_title(title: str, include_metadata: bool = False) -> Optional[D
         """Helper function to check if a team matches in the given text."""
         team_name_lower = team_name.lower()
         aliases = [alias.lower() for alias in team_data.get('aliases', [])]
-        
+
+        if "newcastle jets" in text and team_name_lower in {"newcastle", "newcastle united"}:
+            return None
+
         # Split text into words for exact matching
         text_words = text.split()
         text_phrases = [' '.join(text_words[i:i+4]) for i in range(len(text_words))]  # Check up to 4-word phrases

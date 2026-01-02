@@ -22,7 +22,7 @@ from src.config.teams import premier_league_teams
     # No false positives
     ("Villarreal [1] - 0 Real Madrid", None),  # Should not match Villa
     ("Aston Villa [1] - 0 Arsenal", "Aston Villa"),  # Should match Villa correctly
-    ("Newcastle Jets [1] - 0 Sydney", "Newcastle"),  # Accept Newcastle match
+    ("Newcastle Jets [1] - 0 Sydney", None),  # Should not match Newcastle United
 ])
 def test_team_detection(title: str, expected_team: str):
     """Test that team detection works correctly."""
