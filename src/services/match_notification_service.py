@@ -300,26 +300,24 @@ class MatchNotificationService:
     def _generate_goal_key(self, match: Dict[str, Any], goal: Dict[str, Any]) -> Optional[str]:
         """Generate a canonical key for a goal event.
 
-        Format: {team1}_vs_{team2}_{score}_{minute}
-        Teams are normalized and sorted alphabetically.
+        Format: {team1}_vs_{team2}_{scorer}_{minute}
+        Uses scorer name instead of score to avoid re-detection when match score changes.
         """
         try:
             home_team = match.get('home_team', {})
             away_team = match.get('away_team', {})
             home_name = normalize_team_name(home_team.get('name', ''))
             away_name = normalize_team_name(away_team.get('name', ''))
-            home_score = home_team.get('score', '0')
-            away_score = away_team.get('score', '0')
+            scorer = goal.get('scorer', '').lower().replace(' ', '_').replace('.', '')
             minute = goal.get('minute', '').split('+')[0]  # Base minute only
 
-            if not home_name or not away_name or not minute:
+            if not home_name or not away_name or not minute or not scorer:
                 return None
 
             # Sort teams alphabetically for consistency
             teams_key = "_vs_".join(sorted([home_name, away_name]))
-            score_key = f"{home_score}-{away_score}"
 
-            return f"{teams_key}_{score_key}_{minute}"
+            return f"{teams_key}_{scorer}_{minute}"
 
         except Exception as e:
             espn_logger.error(f"Error generating goal key: {e}")
@@ -340,7 +338,7 @@ class MatchNotificationService:
                 elapsed = (now - detected_at).total_seconds()
 
                 # Check if Reddit has posted this goal
-                if self._reddit_posted_goal(goal_key, posted_scores):
+                if self._reddit_posted_goal(goal_key, goal_data, posted_scores):
                     espn_logger.info(f"Reddit covered goal: {goal_key}")
                     goals_to_remove.append(goal_key)
                     continue
@@ -367,20 +365,23 @@ class MatchNotificationService:
         if goals_to_remove:
             save_data(self.pending_goals, PENDING_GOALS_FILE)
 
-    def _reddit_posted_goal(self, goal_key: str, posted_scores: Dict[str, Dict]) -> bool:
+    def _reddit_posted_goal(
+        self, goal_key: str, goal_data: Dict[str, Any], posted_scores: Dict[str, Dict]
+    ) -> bool:
         """Check if Reddit has posted a matching goal.
 
-        Uses fuzzy matching on the canonical key with minute tolerance.
+        Matches by teams + minute with tolerance. Score matching is flexible since
+        Reddit stores score-at-time-of-goal while we may detect goals later.
         """
         if not posted_scores:
             return False
 
-        # Parse the goal key
-        parts = goal_key.rsplit('_', 2)  # teams_key, score, minute
+        # Parse the ESPN goal key (format: teams_key_scorer_minute)
+        parts = goal_key.rsplit('_', 2)
         if len(parts) != 3:
             return False
 
-        teams_key, score, minute = parts
+        teams_key, _, minute = parts  # scorer is in the middle, we don't need it for matching
 
         try:
             goal_minute = int(minute)
@@ -393,20 +394,17 @@ class MatchNotificationService:
             if len(reddit_parts) != 3:
                 continue
 
-            reddit_teams, reddit_score, reddit_minute = reddit_parts
+            reddit_teams, _, reddit_minute = reddit_parts
 
             # Check teams match
             if reddit_teams != teams_key:
-                continue
-
-            # Check score matches
-            if reddit_score != score:
                 continue
 
             # Check minute within tolerance (±2 minutes)
             try:
                 reddit_min = int(reddit_minute)
                 if abs(reddit_min - goal_minute) <= 2:
+                    espn_logger.debug(f"Found Reddit match: {reddit_key} for ESPN goal at minute {goal_minute}")
                     return True
             except ValueError:
                 continue
