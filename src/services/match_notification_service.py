@@ -308,7 +308,7 @@ class MatchNotificationService:
             away_team = match.get('away_team', {})
             home_name = normalize_team_name(home_team.get('name', ''))
             away_name = normalize_team_name(away_team.get('name', ''))
-            scorer = goal.get('scorer', '').lower().replace(' ', '_').replace('.', '')
+            scorer = goal.get('scorer', '').lower().replace(' ', '').replace('.', '').replace('-', '')
             minute = goal.get('minute', '').split('+')[0]  # Base minute only
 
             if not home_name or not away_name or not minute or not scorer:
