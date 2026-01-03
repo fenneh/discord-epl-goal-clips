@@ -20,4 +20,4 @@ jobs:
 
       - name: Deploy to Dokku
         run: |
-          ssh root@${{ secrets.SSH_HOST }} "cd /root/git/discord-epl-goal-clips && git pull && git archive --format=tar HEAD | dokku git:from-archive epl-clips --"
+          ssh root@${{ secrets.SSH_HOST }} "cd /root/git/discord-epl-goal-clips && git pull && git archive --format=tar HEAD | dokku git:from-archive epl-clips -- || echo 'No changes to deploy (already deployed)'"
