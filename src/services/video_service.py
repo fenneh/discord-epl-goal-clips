@@ -82,29 +82,34 @@ class VideoExtractor:
             return False
 
     async def extract_from_streamff(
-        self, 
-        session: aiohttp.ClientSession, 
+        self,
+        session: aiohttp.ClientSession,
         url: str
     ) -> Optional[str]:
         """Extract MP4 URL from streamff sites."""
         try:
             app_logger.info(f"Extracting from streamff URL: {url}")
-            
+
             # Extract video ID from URL
             video_id = url.split('/v/')[-1] if '/v/' in url else url.split('/')[-1]
             app_logger.info(f"Extracted video ID: {video_id}")
-            
-            # Try direct MP4 URL
-            mp4_url = f"https://ffedge.streamff.com/uploads/{video_id}.mp4"
-            app_logger.info(f"Trying MP4 URL: {mp4_url}")
-            
-            if await self.validate_mp4_url(session, mp4_url):
-                app_logger.info(f"Found valid MP4 URL: {mp4_url}")
-                return mp4_url
-                
-            app_logger.warning("No valid MP4 URL found for streamff")
-            return None
-            
+
+            # Try multiple CDN URLs (new CDN first, then old as fallback)
+            cdn_urls = [
+                f"https://cdn.streamff.one/{video_id}.mp4",
+                f"https://ffedge.streamff.com/uploads/{video_id}.mp4",
+            ]
+
+            for mp4_url in cdn_urls:
+                app_logger.info(f"Trying MP4 URL: {mp4_url}")
+                if await self.validate_mp4_url(session, mp4_url):
+                    app_logger.info(f"Found valid MP4 URL: {mp4_url}")
+                    return mp4_url
+
+            # Fallback to page parsing
+            app_logger.info("Direct CDN URLs failed, trying page parsing")
+            return await self._extract_from_page(session, url)
+
         except Exception as e:
             app_logger.error(f"Error extracting from streamff: {e}", exc_info=True)
             return None
