@@ -4,8 +4,13 @@ from datetime import datetime, timezone, timedelta
 
 import pytest
 
-from src.utils.score_utils import is_duplicate_score, extract_goal_info, generate_canonical_key
+from src.utils.score_utils import (
+    is_duplicate_score,
+    extract_goal_info,
+    generate_canonical_key,
+)
 from src.services.reddit_service import find_team_in_title
+
 
 @pytest.mark.parametrize(
     "title1,title2,should_match,time_diff",
@@ -115,6 +120,7 @@ def test_duplicate_detection(title1, title2, should_match, time_diff):
 
     assert is_duplicate == should_match
 
+
 def test_team_logo_detection():
     """Test that we get the correct team logo for goals."""
     test_cases = [
@@ -122,15 +128,17 @@ def test_team_logo_detection():
             "title": "Leeds United 0 - [1] Wolves - Goncalo Guedes 19'",
             "expected_team": "Wolves",
             "expected_logo": "https://resources.premierleague.com/premierleague/badges/t39.png",
-            "expected_is_scoring": True
+            "expected_is_scoring": True,
         }
     ]
-    
+
     for case in test_cases:
         # Get team data with metadata
-        result = find_team_in_title(case['title'], include_metadata=True)
-        
+        result = find_team_in_title(case["title"], include_metadata=True)
+
         assert result is not None, "Failed to find any team"
-        assert result['name'] == case['expected_team'], f"Expected {case['expected_team']}, got {result['name']}"
-        assert result['data']['logo'] == case['expected_logo'], "Wrong logo URL"
-        assert result['is_scoring'] == case['expected_is_scoring'], "Wrong scoring flag"
+        assert result["name"] == case["expected_team"], (
+            f"Expected {case['expected_team']}, got {result['name']}"
+        )
+        assert result["data"]["logo"] == case["expected_logo"], "Wrong logo URL"
+        assert result["is_scoring"] == case["expected_is_scoring"], "Wrong scoring flag"

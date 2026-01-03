@@ -11,6 +11,7 @@ from src.utils.score_utils import (
     generate_canonical_key,
 )
 
+
 @pytest.mark.parametrize(
     "input_name,expected",
     [
@@ -28,6 +29,7 @@ from src.utils.score_utils import (
 )
 def test_normalize_player_name(input_name: str, expected: str):
     assert normalize_player_name(input_name) == expected
+
 
 @pytest.mark.parametrize(
     "title,expected",
@@ -51,7 +53,10 @@ def test_extract_goal_info(title, expected):
         return
     assert result["score"] == expected["score"]
     assert result["minute"] == expected["minute"]
-    assert normalize_player_name(result["scorer"]) == normalize_player_name(expected["scorer"])
+    assert normalize_player_name(result["scorer"]) == normalize_player_name(
+        expected["scorer"]
+    )
+
 
 @pytest.mark.parametrize(
     "title1,title2,should_match,time_diff",
@@ -127,7 +132,9 @@ def test_canonical_key_strips_brackets():
     Keys must match for cross-system deduplication to work.
     """
     # Home team scores
-    info = extract_goal_info("Aston Villa [1] - 0 Nottingham Forest - Ollie Watkins 45+1'")
+    info = extract_goal_info(
+        "Aston Villa [1] - 0 Nottingham Forest - Ollie Watkins 45+1'"
+    )
     assert info is not None
     key = generate_canonical_key(info)
     assert key is not None
@@ -170,19 +177,23 @@ class TestEspnRedditGoalKeyMatching:
             ("Virgil van Dijk", "dijk"),
         ],
     )
-    def test_espn_scorer_normalized_to_surname(self, scorer_name: str, expected_surname: str):
+    def test_espn_scorer_normalized_to_surname(
+        self, scorer_name: str, expected_surname: str
+    ):
         """ESPN scorer names should normalize to surname only using normalize_player_name().
 
         This matches how Reddit normalizes player names for deduplication.
         """
         normalized = normalize_player_name(scorer_name)
-        assert '_' not in normalized, f"Scorer '{scorer_name}' contains underscore: {normalized}"
+        assert "_" not in normalized, (
+            f"Scorer '{scorer_name}' contains underscore: {normalized}"
+        )
         assert normalized == expected_surname
 
     def test_espn_key_parses_correctly_with_surname(self):
         """ESPN key with surname-only scorer parses correctly with rsplit('_', 2)."""
         espn_key = "aston villa_vs_nottingham forest_mcginn_73"
-        parts = espn_key.rsplit('_', 2)
+        parts = espn_key.rsplit("_", 2)
 
         assert len(parts) == 3
         assert parts[0] == "aston villa_vs_nottingham forest"
@@ -192,7 +203,7 @@ class TestEspnRedditGoalKeyMatching:
     def test_reddit_key_parses_correctly(self):
         """Reddit keys parse correctly since scores don't contain underscores."""
         reddit_key = "aston villa_vs_nottingham forest_3-1_73"
-        parts = reddit_key.rsplit('_', 2)
+        parts = reddit_key.rsplit("_", 2)
 
         assert len(parts) == 3
         assert parts[0] == "aston villa_vs_nottingham forest"
@@ -204,8 +215,8 @@ class TestEspnRedditGoalKeyMatching:
         espn_key = "aston villa_vs_nottingham forest_mcginn_73"
         reddit_key = "aston villa_vs_nottingham forest_3-1_73"
 
-        espn_parts = espn_key.rsplit('_', 2)
-        reddit_parts = reddit_key.rsplit('_', 2)
+        espn_parts = espn_key.rsplit("_", 2)
+        reddit_parts = reddit_key.rsplit("_", 2)
 
         assert espn_parts[0] == reddit_parts[0], (
             f"Teams mismatch: ESPN={espn_parts[0]}, Reddit={reddit_parts[0]}"
@@ -216,15 +227,25 @@ class TestEspnRedditGoalKeyMatching:
         "espn_key,reddit_key,should_match_teams",
         [
             # Surname-only keys - teams match
-            ("aston villa_vs_nottingham forest_mcginn_73", "aston villa_vs_nottingham forest_3-1_73", True),
+            (
+                "aston villa_vs_nottingham forest_mcginn_73",
+                "aston villa_vs_nottingham forest_3-1_73",
+                True,
+            ),
             ("arsenal_vs_chelsea_saka_45", "arsenal_vs_chelsea_1-0_45", True),
-            ("liverpool_vs_manchester city_salah_90", "liverpool_vs_manchester city_2-2_90", True),
+            (
+                "liverpool_vs_manchester city_salah_90",
+                "liverpool_vs_manchester city_2-2_90",
+                True,
+            ),
         ],
     )
-    def test_cross_system_team_matching(self, espn_key: str, reddit_key: str, should_match_teams: bool):
+    def test_cross_system_team_matching(
+        self, espn_key: str, reddit_key: str, should_match_teams: bool
+    ):
         """Verify ESPN and Reddit key team extraction matches."""
-        espn_parts = espn_key.rsplit('_', 2)
-        reddit_parts = reddit_key.rsplit('_', 2)
+        espn_parts = espn_key.rsplit("_", 2)
+        reddit_parts = reddit_key.rsplit("_", 2)
 
         teams_match = espn_parts[0] == reddit_parts[0]
         assert teams_match == should_match_teams

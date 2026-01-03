@@ -9,13 +9,13 @@
 # Base domains for supported video sites
 # Keeping this as it's used by VideoExtractor
 base_domains = {
-    'dubz',
-    'streamff',
-    'streamin',
-    'streamable',
-    'streamja',
-    'streamvi',
-    'streamwo',
-    'streamye',
-    'streamgg'
+    "dubz",
+    "streamff",
+    "streamin",
+    "streamable",
+    "streamja",
+    "streamvi",
+    "streamwo",
+    "streamye",
+    "streamgg",
 }

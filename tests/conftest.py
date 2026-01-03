@@ -6,6 +6,7 @@ import pytest
 
 import src.main as main
 
+
 @pytest.fixture(autouse=True)
 def isolate_runtime_state(monkeypatch):
     """Prevent tests from posting or writing files."""
@@ -23,10 +24,12 @@ def isolate_runtime_state(monkeypatch):
     monkeypatch.setattr(main, "extract_mp4_with_retries", noop_none)
     monkeypatch.setattr(main, "save_data", lambda *args, **kwargs: None)
 
+
 @pytest.fixture
 def base_time():
     """Fixture for base timestamp."""
     return datetime.now(timezone.utc)
+
 
 @pytest.fixture
 def posted_scores():

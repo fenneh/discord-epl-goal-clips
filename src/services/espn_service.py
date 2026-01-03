@@ -8,7 +8,7 @@ from espn_sports_api import Soccer
 from src.utils.logger import setup_logger
 from src.utils.match_utils import get_current_uk_time
 
-espn_logger = setup_logger('espn_service', 'espn.log')
+espn_logger = setup_logger("espn_service", "espn.log")
 
 epl = Soccer(league="epl")
 
@@ -24,7 +24,7 @@ def fetch_matches_for_date(target_date: date) -> List[Dict[str, Any]]:
     """
     try:
         data = epl.on_date(target_date)
-        matches = _parse_events(data.get('events', []))
+        matches = _parse_events(data.get("events", []))
         espn_logger.debug(f"Fetched {len(matches)} matches for {target_date}")
         return matches
     except Exception as e:
@@ -71,43 +71,43 @@ def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
     Returns:
         Standardized match dictionary or None if parsing fails
     """
-    status_info = event.get('status', {}).get('type', {})
+    status_info = event.get("status", {}).get("type", {})
 
     match = {
-        'id': event.get('id'),
-        'name': event.get('name'),
-        'short_name': event.get('shortName'),
-        'date': event.get('date'),
-        'status': status_info.get('name'),
-        'status_description': status_info.get('description'),
-        'home_team': None,
-        'away_team': None,
-        'goals': [],
+        "id": event.get("id"),
+        "name": event.get("name"),
+        "short_name": event.get("shortName"),
+        "date": event.get("date"),
+        "status": status_info.get("name"),
+        "status_description": status_info.get("description"),
+        "home_team": None,
+        "away_team": None,
+        "goals": [],
     }
 
-    competitions = event.get('competitions', [])
+    competitions = event.get("competitions", [])
     if not competitions:
         return match
 
     competition = competitions[0]
-    competitors = competition.get('competitors', [])
+    competitors = competition.get("competitors", [])
     for comp in competitors:
-        team_data = comp.get('team', {})
+        team_data = comp.get("team", {})
         team_info = {
-            'name': team_data.get('displayName'),
-            'short_name': team_data.get('shortDisplayName'),
-            'abbreviation': team_data.get('abbreviation'),
-            'score': comp.get('score'),
-            'logo': team_data.get('logo'),
+            "name": team_data.get("displayName"),
+            "short_name": team_data.get("shortDisplayName"),
+            "abbreviation": team_data.get("abbreviation"),
+            "score": comp.get("score"),
+            "logo": team_data.get("logo"),
         }
 
-        if comp.get('homeAway') == 'home':
-            match['home_team'] = team_info
+        if comp.get("homeAway") == "home":
+            match["home_team"] = team_info
         else:
-            match['away_team'] = team_info
+            match["away_team"] = team_info
 
-    details = competition.get('details', [])
-    match['goals'] = _parse_goal_events(details)
+    details = competition.get("details", [])
+    match["goals"] = _parse_goal_events(details)
 
     return match
 
@@ -124,29 +124,31 @@ def _parse_goal_events(details: List[Dict]) -> List[Dict[str, Any]]:
     goals = []
     for detail in details:
         try:
-            event_type = detail.get('type', {}).get('text', '').lower()
-            if 'goal' not in event_type:
+            event_type = detail.get("type", {}).get("text", "").lower()
+            if "goal" not in event_type:
                 continue
 
-            if 'own goal' in event_type:
+            if "own goal" in event_type:
                 continue
 
-            clock = detail.get('clock', {})
-            minute = clock.get('displayValue', '').replace("'", "").strip()
+            clock = detail.get("clock", {})
+            minute = clock.get("displayValue", "").replace("'", "").strip()
 
-            scoring_team = detail.get('team', {}).get('displayName', '')
+            scoring_team = detail.get("team", {}).get("displayName", "")
 
-            athletes = detail.get('athletesInvolved', [])
-            scorer = athletes[0].get('displayName', 'Unknown') if athletes else 'Unknown'
+            athletes = detail.get("athletesInvolved", [])
+            scorer = (
+                athletes[0].get("displayName", "Unknown") if athletes else "Unknown"
+            )
 
-            score_value = detail.get('scoreValue', 1)
+            score_value = detail.get("scoreValue", 1)
 
             goal = {
-                'minute': minute,
-                'scorer': scorer,
-                'team': scoring_team,
-                'type': event_type,
-                'score_value': score_value,
+                "minute": minute,
+                "scorer": scorer,
+                "team": scoring_team,
+                "type": event_type,
+                "score_value": score_value,
             }
             goals.append(goal)
 
@@ -165,10 +167,10 @@ def get_match_display_name(match: Dict[str, Any]) -> str:
     Returns:
         Formatted match name string
     """
-    home = match.get('home_team', {})
-    away = match.get('away_team', {})
-    home_name = home.get('name', 'Unknown') if home else 'Unknown'
-    away_name = away.get('name', 'Unknown') if away else 'Unknown'
+    home = match.get("home_team", {})
+    away = match.get("away_team", {})
+    home_name = home.get("name", "Unknown") if home else "Unknown"
+    away_name = away.get("name", "Unknown") if away else "Unknown"
     return f"{home_name} vs {away_name}"
 
 
@@ -181,10 +183,10 @@ def get_match_score_display(match: Dict[str, Any]) -> str:
     Returns:
         Formatted score string (e.g., "Arsenal 2 - 1 Chelsea")
     """
-    home = match.get('home_team', {})
-    away = match.get('away_team', {})
-    home_name = home.get('name', 'Unknown') if home else 'Unknown'
-    away_name = away.get('name', 'Unknown') if away else 'Unknown'
-    home_score = home.get('score', '0') if home else '0'
-    away_score = away.get('score', '0') if away else '0'
+    home = match.get("home_team", {})
+    away = match.get("away_team", {})
+    home_name = home.get("name", "Unknown") if home else "Unknown"
+    away_name = away.get("name", "Unknown") if away else "Unknown"
+    home_score = home.get("score", "0") if home else "0"
+    away_score = away.get("score", "0") if away else "0"
     return f"{home_name} {home_score} - {away_score} {away_name}"

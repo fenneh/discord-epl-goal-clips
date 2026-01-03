@@ -6,12 +6,13 @@ from datetime import datetime
 from typing import Dict, Any
 from src.utils.logger import app_logger
 
+
 def _convert_to_timestamp(data: Dict[str, Any]) -> Dict[str, Any]:
     """Convert datetime objects to ISO format strings in a dictionary.
-    
+
     Args:
         data (dict): Dictionary possibly containing datetime objects
-        
+
     Returns:
         dict: Dictionary with datetime objects converted to ISO format strings
     """
@@ -29,9 +30,10 @@ def _convert_to_timestamp(data: Dict[str, Any]) -> Dict[str, Any]:
         app_logger.error(f"Error converting to timestamp: {str(e)}, data: {data}")
         return data
 
+
 def save_data(data: Any, filename: str) -> None:
     """Save data to a pickle file.
-    
+
     Args:
         data: Data to save
         filename (str): Name of the file to save to
@@ -46,32 +48,35 @@ def save_data(data: Any, filename: str) -> None:
                     try:
                         converted_data[k] = _convert_to_timestamp(v)
                     except Exception as e:
-                        app_logger.error(f"Error converting inner dict: {str(e)}, key: {k}, value: {v}")
+                        app_logger.error(
+                            f"Error converting inner dict: {str(e)}, key: {k}, value: {v}"
+                        )
                         converted_data[k] = v
                 else:
                     converted_data[k] = v
             data = converted_data
-        
-        with open(filename, 'wb') as f:
+
+        with open(filename, "wb") as f:
             pickle.dump(data, f)
     except Exception as e:
         app_logger.error(f"Failed to save data to {filename}: {str(e)}")
 
+
 def load_data(filename: str, default: Any = None) -> Any:
     """Load data from a pickle file.
-    
+
     Args:
         filename (str): Name of the file to load from
         default: Default value to return if file doesn't exist or load fails
-        
+
     Returns:
         Data loaded from the file or default value
     """
     if not os.path.exists(filename):
         return default
-    
+
     try:
-        with open(filename, 'rb') as f:
+        with open(filename, "rb") as f:
             data = pickle.load(f)
             app_logger.debug(f"Loaded data from {filename}: {data}")
             return data

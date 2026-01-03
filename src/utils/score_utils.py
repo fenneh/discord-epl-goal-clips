@@ -7,6 +7,7 @@ from typing import Dict, Optional
 
 from src.utils.logger import app_logger
 
+
 def normalize_player_name(name: str) -> str:
     """Normalize player name to surname for duplicate detection.
 
@@ -30,12 +31,13 @@ def normalize_player_name(name: str) -> str:
     name = name.lower()
 
     # Remove accents (e.g., "Díaz" -> "Diaz")
-    name = ''.join(c for c in unicodedata.normalize('NFKD', name)
-                  if not unicodedata.combining(c))
+    name = "".join(
+        c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c)
+    )
 
     # Remove punctuation - this strips periods before we check for ". "
     # which means "V. van Dijk" becomes "v van dijk" and we take last word
-    name = re.sub(r'[^a-z0-9\s]', '', name)
+    name = re.sub(r"[^a-z0-9\s]", "", name)
 
     # Extract surname: take the last word from the name
     # This handles both "Gabriel Jesus" and "V van Dijk" -> last word
@@ -44,65 +46,78 @@ def normalize_player_name(name: str) -> str:
 
     return name.strip()
 
+
 def normalize_team_name(team_name: str) -> str:
     """Normalize team names to handle common variations.
-    
+
     Args:
         team_name (str): Team name to normalize
-        
+
     Returns:
         str: Normalized team name
     """
     # Convert to lowercase for case-insensitive comparison
     name = team_name.lower().strip()
-    
+
     # Remove "the" prefix
-    if name.startswith('the '):
+    if name.startswith("the "):
         name = name[4:]
-    
+
     # Handle special cases and nicknames first
     # Make sure team names in keys are normalized lowercase too
     replacements = {
-        'arsenal': ['gunners'],
-        'manchester united': ['man united', 'man utd', 'man u', 'manchester utd', 'mufc'],
-        'manchester city': ['man city', 'mcfc'],
-        'tottenham': ['spurs', 'thfc', 'tottenham hotspur', 'hotspur'],
-        'wolverhampton wanderers': ['wolves', 'wwfc', 'wanderers'],
-        'brighton & hove albion': ['brighton', 'brighton and hove', 'bha'],
-        'crystal palace': ['palace', 'cpfc'],
-        'aston villa': ['villa', 'avfc'],
-        'newcastle united': ['newcastle', 'nufc', 'newcastle utd'],
-        'west ham united': ['west ham', 'hammers', 'whufc'],
-        'liverpool': ['reds', 'lfc'],
-        'chelsea': ['blues', 'cfc'],
-        'burnley': ['clarets', 'bfc'],
-        'leeds united': ['leeds', 'leeds utd', 'whites', 'lufc'],
-        'sunderland': ['black cats', 'safc'],
-        'nottingham forest': ['forest', 'nffc', 'nott\'m forest', 'nottm forest'],
-        'bournemouth': ['afc bournemouth', 'cherries'],
-        'brentford': ['bees'],
-        'fulham': ['cottagers', 'ffc'],
-        'everton': ['toffees', 'efc'],
+        "arsenal": ["gunners"],
+        "manchester united": [
+            "man united",
+            "man utd",
+            "man u",
+            "manchester utd",
+            "mufc",
+        ],
+        "manchester city": ["man city", "mcfc"],
+        "tottenham": ["spurs", "thfc", "tottenham hotspur", "hotspur"],
+        "wolverhampton wanderers": ["wolves", "wwfc", "wanderers"],
+        "brighton & hove albion": ["brighton", "brighton and hove", "bha"],
+        "crystal palace": ["palace", "cpfc"],
+        "aston villa": ["villa", "avfc"],
+        "newcastle united": ["newcastle", "nufc", "newcastle utd"],
+        "west ham united": ["west ham", "hammers", "whufc"],
+        "liverpool": ["reds", "lfc"],
+        "chelsea": ["blues", "cfc"],
+        "burnley": ["clarets", "bfc"],
+        "leeds united": ["leeds", "leeds utd", "whites", "lufc"],
+        "sunderland": ["black cats", "safc"],
+        "nottingham forest": ["forest", "nffc", "nott'm forest", "nottm forest"],
+        "bournemouth": ["afc bournemouth", "cherries"],
+        "brentford": ["bees"],
+        "fulham": ["cottagers", "ffc"],
+        "everton": ["toffees", "efc"],
     }
-    
+
     # Try to match team name with known variations first
     for standard, variations in replacements.items():
         # Check if the name matches the standard form
         if name == standard:
             return standard
-            
+
         # Check if the name matches any of the variations exactly or as a word
         for var in variations:
             # Use word boundaries for alias matching to avoid partial words
             # e.g. prevent 'man' matching 'manchester' if 'man' isn't a specific alias
-            if re.fullmatch(var, name) or re.search(rf'\b{re.escape(var)}\b', name):
+            if re.fullmatch(var, name) or re.search(rf"\b{re.escape(var)}\b", name):
                 return standard
 
     # Remove common suffixes AFTER checking specific aliases/names to avoid over-stripping
     # Example: "Manchester United" should be normalized above, not stripped to "Manchester" here
-    name = re.sub(r'\s+(fc|football club|united|utd|hotspur|wanderers|&|and|albion|city)(\s+|$)', ' ', name, flags=re.IGNORECASE).strip()
-            
+    name = re.sub(
+        r"\s+(fc|football club|united|utd|hotspur|wanderers|&|and|albion|city)(\s+|$)",
+        " ",
+        name,
+        flags=re.IGNORECASE,
+    ).strip()
+
     return name.strip()
+
 
 def extract_goal_info(title: str) -> Optional[Dict[str, Optional[str]]]:
     """Extract goal information from title.
@@ -115,58 +130,59 @@ def extract_goal_info(title: str) -> Optional[Dict[str, Optional[str]]]:
     """
     try:
         # Remove invisible Unicode control characters that break regex parsing
-        title = re.sub(r'[\u200b-\u200f\u202a-\u202e\ufeff]', '', title)
+        title = re.sub(r"[\u200b-\u200f\u202a-\u202e\ufeff]", "", title)
 
         # Extract score pattern and minute
-        score_match = re.search(r'(\d+\s*-\s*\[\d+\]|\[\d+\]\s*-\s*\d+)', title)
+        score_match = re.search(r"(\d+\s*-\s*\[\d+\]|\[\d+\]\s*-\s*\d+)", title)
         # Handle injury time minutes (e.g., 90+2)
-        minute_match = re.search(r'(\d+(?:\+\d+)?)\s*\'', title)
-        
+        minute_match = re.search(r"(\d+(?:\+\d+)?)\s*\'", title)
+
         if not score_match or not minute_match:
             return None
-            
+
         # Extract scorer's name - usually before the minute
-        name_match = re.search(r'-\s*([^-]+?)\s*\d+(?:\+\d+)?\s*\'', title)
-        
+        name_match = re.search(r"-\s*([^-]+?)\s*\d+(?:\+\d+)?\s*\'", title)
+
         # Extract team names - more flexible pattern that handles variations better
         score_pattern = score_match.group(1)
         title_parts = title.split(score_pattern)
         if len(title_parts) != 2:
             return None
-            
+
         # First part is team1, second part has team2 followed by scorer
         team1 = title_parts[0].strip()
-        team2_match = re.match(r'\s*([^-]+?)\s*-', title_parts[1])
+        team2_match = re.match(r"\s*([^-]+?)\s*-", title_parts[1])
         if not team2_match:
             return None
-            
+
         team2 = team2_match.group(1).strip()
-        
+
         # Normalize team names
         team1_norm = normalize_team_name(team1)
         team2_norm = normalize_team_name(team2)
-        
+
         return {
-            'score': score_match.group(1).replace(' ', ''),
-            'minute': minute_match.group(1),
-            'scorer': name_match.group(1).strip() if name_match else None,
-            'team1': team1_norm,
-            'team2': team2_norm
+            "score": score_match.group(1).replace(" ", ""),
+            "minute": minute_match.group(1),
+            "scorer": name_match.group(1).strip() if name_match else None,
+            "team1": team1_norm,
+            "team2": team2_norm,
         }
-        
+
     except Exception as e:
         app_logger.error(f"Error extracting goal info: {str(e)}")
         return None
 
+
 def normalize_title(title: str) -> str:
     """Normalize title to canonical format.
-    
+
     This removes variations in player names (e.g., "G. Jesus" vs "Gabriel Jesus")
     and other formatting differences.
-    
+
     Args:
         title (str): Title to normalize
-        
+
     Returns:
         str: Normalized title
     """
@@ -174,44 +190,52 @@ def normalize_title(title: str) -> str:
     goal_info = extract_goal_info(title)
     if not goal_info:
         return title
-        
+
     # Reconstruct title in canonical format
     return f"{goal_info['team1']} vs {goal_info['team2']} {goal_info['score']} {goal_info['minute']}' Scorer: {goal_info.get('scorer', 'Unknown')}"
 
+
 def extract_minutes(minute_str: str) -> int:
     """Extract the base minute from a minute string, handling injury time.
-    
+
     Args:
         minute_str (str): Minute string (e.g., "90+2", "45", "45+1")
-        
+
     Returns:
         int: Total minutes
     """
-    if '+' in minute_str:
-        base, injury = minute_str.split('+')
+    if "+" in minute_str:
+        base, injury = minute_str.split("+")
         return int(base) + int(injury)
     return int(minute_str)
 
+
 def generate_canonical_key(goal_info: Dict[str, Optional[str]]) -> Optional[str]:
     """Generates a consistent key for a goal event."""
-    team1 = goal_info.get('team1')
-    team2 = goal_info.get('team2')
-    score = goal_info.get('score')
-    minute = goal_info.get('minute')
+    team1 = goal_info.get("team1")
+    team2 = goal_info.get("team2")
+    score = goal_info.get("score")
+    minute = goal_info.get("minute")
     if not goal_info or not team1 or not team2 or not score or not minute:
         app_logger.debug(f"Cannot generate canonical key, missing info: {goal_info}")
         return None
     # Sort team names alphabetically to handle "TeamA vs TeamB" and "TeamB vs TeamA" the same
     teams_key = "_vs_".join(sorted([team1, team2]))
     # Use base minute to handle minor variations in injury time reporting
-    base_minute = minute.split('+')[0]
+    base_minute = minute.split("+")[0]
     # Normalize score by removing spaces and brackets
-    score_key = re.sub(r'[\[\]\s]', '', score)
+    score_key = re.sub(r"[\[\]\s]", "", score)
     key = f"{teams_key}_{score_key}_{base_minute}"
     app_logger.debug(f"Generated canonical key: {key}")
     return key
 
-def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], timestamp: datetime, url: Optional[str] = None) -> bool:
+
+def is_duplicate_score(
+    title: str,
+    posted_scores: Dict[str, Dict[str, str]],
+    timestamp: datetime,
+    url: Optional[str] = None,
+) -> bool:
     """Check if this goal has already been posted using a canonical key."""
     # Set a time window for considering duplicates (e.g., 30 minutes)
     DUPLICATE_CHECK_WINDOW_MINUTES = 30
@@ -219,36 +243,47 @@ def is_duplicate_score(title: str, posted_scores: Dict[str, Dict[str, str]], tim
     try:
         current_info = extract_goal_info(title)
         if not current_info:
-            app_logger.warning(f"Could not extract goal info for duplicate check: {title}")
-            return False # Cannot determine if duplicate if info extraction fails
+            app_logger.warning(
+                f"Could not extract goal info for duplicate check: {title}"
+            )
+            return False  # Cannot determine if duplicate if info extraction fails
 
         canonical_key = generate_canonical_key(current_info)
         if not canonical_key:
-            app_logger.warning(f"Could not generate canonical key for duplicate check: {title}")
-            return False # Cannot determine if duplicate
+            app_logger.warning(
+                f"Could not generate canonical key for duplicate check: {title}"
+            )
+            return False  # Cannot determine if duplicate
 
         if canonical_key in posted_scores:
             # Check timestamp to ensure it's reasonably close
             posted_data = posted_scores[canonical_key]
-            posted_time = datetime.fromisoformat(posted_data['timestamp'])
+            posted_time = datetime.fromisoformat(posted_data["timestamp"])
             time_diff = timestamp - posted_time
-            
-            if time_diff < timedelta(minutes=DUPLICATE_CHECK_WINDOW_MINUTES):
-                 app_logger.info(f"[DUPLICATE] Found matching canonical key '{canonical_key}' within {DUPLICATE_CHECK_WINDOW_MINUTES} mins.")
-                 app_logger.info(f"  Current Post:  Title='{title}', URL='{url}'")
-                 # Use get with default for keys that might not exist in older stored data
-                 app_logger.info(f"  Previous Post: Title='{posted_data.get('original_title', 'N/A')}', URL='{posted_data.get('url', 'N/A')}', Reddit='{posted_data.get('reddit_url', 'N/A')}', Time='{posted_time}'")
-                 return True
-            else:
-                 app_logger.info(f"[STALE MATCH] Canonical key '{canonical_key}' found, but outside time window ({time_diff}). Not a duplicate.")
-                 # Optional: Update timestamp if it's just a stale entry for the same key?
-                 # posted_scores[canonical_key]['timestamp'] = timestamp.isoformat() # Consider if this makes sense
 
-        return False # No recent matching key found
+            if time_diff < timedelta(minutes=DUPLICATE_CHECK_WINDOW_MINUTES):
+                app_logger.info(
+                    f"[DUPLICATE] Found matching canonical key '{canonical_key}' within {DUPLICATE_CHECK_WINDOW_MINUTES} mins."
+                )
+                app_logger.info(f"  Current Post:  Title='{title}', URL='{url}'")
+                # Use get with default for keys that might not exist in older stored data
+                app_logger.info(
+                    f"  Previous Post: Title='{posted_data.get('original_title', 'N/A')}', URL='{posted_data.get('url', 'N/A')}', Reddit='{posted_data.get('reddit_url', 'N/A')}', Time='{posted_time}'"
+                )
+                return True
+            else:
+                app_logger.info(
+                    f"[STALE MATCH] Canonical key '{canonical_key}' found, but outside time window ({time_diff}). Not a duplicate."
+                )
+                # Optional: Update timestamp if it's just a stale entry for the same key?
+                # posted_scores[canonical_key]['timestamp'] = timestamp.isoformat() # Consider if this makes sense
+
+        return False  # No recent matching key found
 
     except Exception as e:
         app_logger.error(f"Error in is_duplicate_score: {str(e)}", exc_info=True)
-        return False # Err on the side of not calling it a duplicate
+        return False  # Err on the side of not calling it a duplicate
+
 
 def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> bool:
     """Remove scores older than a defined threshold (e.g., 24 hours)."""
@@ -258,12 +293,14 @@ def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> bool:
 
     for key, data in posted_scores.items():
         try:
-            posted_time = datetime.fromisoformat(data['timestamp'])
+            posted_time = datetime.fromisoformat(data["timestamp"])
             if now - posted_time > timedelta(hours=CLEANUP_THRESHOLD_HOURS):
                 keys_to_delete.append(key)
         except (ValueError, KeyError) as e:
-            app_logger.warning(f"Could not parse timestamp for score key '{key}': {e}. Marking for deletion.")
-            keys_to_delete.append(key) # Remove entries with invalid timestamps
+            app_logger.warning(
+                f"Could not parse timestamp for score key '{key}': {e}. Marking for deletion."
+            )
+            keys_to_delete.append(key)  # Remove entries with invalid timestamps
 
     deleted_count = 0
     for key in keys_to_delete:
@@ -272,7 +309,9 @@ def cleanup_old_scores(posted_scores: Dict[str, Dict[str, str]]) -> bool:
             deleted_count += 1
 
     if deleted_count > 0:
-        app_logger.info(f"Cleaned up {deleted_count} old score entries (older than {CLEANUP_THRESHOLD_HOURS} hours).")
-        return True # Indicate that changes were made
+        app_logger.info(
+            f"Cleaned up {deleted_count} old score entries (older than {CLEANUP_THRESHOLD_HOURS} hours)."
+        )
+        return True  # Indicate that changes were made
 
-    return False # No changes made
+    return False  # No changes made
