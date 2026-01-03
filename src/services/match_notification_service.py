@@ -1,13 +1,27 @@
 """Match notification service for posting Premier League match updates."""
 
 import os
+import random
 from datetime import datetime, timezone
 from typing import Dict, Set, Any, Optional, List
 
 import aiohttp
 
-from src.config import DISCORD_WEBHOOK_URL, DISCORD_USERNAME, DISCORD_AVATAR_URL, DATA_DIR, POSTED_SCORES_FILE
-from src.services.espn_service import fetch_todays_matches, get_match_display_name, get_match_score_display, espn_logger
+from src.config import (
+    DISCORD_WEBHOOK_URL,
+    DISCORD_USERNAME,
+    DISCORD_AVATAR_URL,
+    DATA_DIR,
+    POSTED_SCORES_FILE,
+    STREAMS_URL,
+    STREAMS_PASSWORD_FILE,
+)
+from src.services.espn_service import (
+    fetch_todays_matches,
+    get_match_display_name,
+    get_match_score_display,
+    espn_logger,
+)
 from src.utils.match_utils import (
     map_espn_team_to_config,
     format_match_time_uk,
@@ -20,12 +34,12 @@ from src.utils.logger import webhook_logger
 from src.utils.score_utils import normalize_team_name, normalize_player_name
 
 # Persistence files
-MATCH_STATE_FILE = os.path.join(DATA_DIR, 'match_states.pkl')
-DAILY_POSTED_FILE = os.path.join(DATA_DIR, 'daily_schedule_posted.pkl')
-NOTIFIED_EVENTS_FILE = os.path.join(DATA_DIR, 'notified_events.pkl')
-KNOWN_GOALS_FILE = os.path.join(DATA_DIR, 'known_goals.pkl')
-PENDING_GOALS_FILE = os.path.join(DATA_DIR, 'pending_goals.pkl')
-ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, 'espn_covered_goals.pkl')
+MATCH_STATE_FILE = os.path.join(DATA_DIR, "match_states.pkl")
+DAILY_POSTED_FILE = os.path.join(DATA_DIR, "daily_schedule_posted.pkl")
+NOTIFIED_EVENTS_FILE = os.path.join(DATA_DIR, "notified_events.pkl")
+KNOWN_GOALS_FILE = os.path.join(DATA_DIR, "known_goals.pkl")
+PENDING_GOALS_FILE = os.path.join(DATA_DIR, "pending_goals.pkl")
+ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, "espn_covered_goals.pkl")
 
 # Premier League logo for schedule posts
 PL_LOGO = "https://resources.premierleague.com/premierleague/competitions/competition_1_small.png"
@@ -47,7 +61,34 @@ class MatchNotificationService:
         # Track known goals per match: {match_id: [goal_keys]}
         self.known_goals: Dict[str, List[str]] = load_data(KNOWN_GOALS_FILE, {})
         # Track pending goals waiting for Reddit: {goal_key: {data}}
-        self.pending_goals: Dict[str, Dict[str, Any]] = load_data(PENDING_GOALS_FILE, {})
+        self.pending_goals: Dict[str, Dict[str, Any]] = load_data(
+            PENDING_GOALS_FILE, {}
+        )
+
+    def _generate_streams_password(self) -> str:
+        """Generate a new streams password and save to file."""
+        password = f"imperium{random.randint(1000, 9999)}"
+        today = get_today_uk_date_str()
+        try:
+            with open(STREAMS_PASSWORD_FILE, "w") as f:
+                f.write(f"{today}\n{password}\n")
+            espn_logger.info("Generated new streams password")
+        except Exception as e:
+            espn_logger.error(f"Error writing streams password: {e}")
+        return password
+
+    def _get_streams_password(self) -> Optional[str]:
+        """Read current streams password from file."""
+        try:
+            with open(STREAMS_PASSWORD_FILE, "r") as f:
+                lines = f.read().strip().split("\n")
+                if len(lines) >= 2:
+                    return lines[1]
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            espn_logger.error(f"Error reading streams password: {e}")
+        return None
 
     async def check_and_notify(self) -> None:
         """Main check method - called from periodic loop."""
@@ -94,17 +135,24 @@ class MatchNotificationService:
 
             # Format schedule
             schedule_lines = []
-            for match in sorted(matches, key=lambda m: m.get('date', '')):
-                kick_off = format_match_time_uk(match.get('date', ''))
+            for match in sorted(matches, key=lambda m: m.get("date", "")):
+                kick_off = format_match_time_uk(match.get("date", ""))
                 match_name = get_match_display_name(match)
                 schedule_lines.append(f"**{kick_off}** - {match_name}")
 
-            description = '\n'.join(schedule_lines)
+            description = "\n".join(schedule_lines)
+
+            # Generate new streams password and add to description
+            if STREAMS_URL:
+                password = self._generate_streams_password()
+                description += (
+                    f"\n\n**Watch Live:** {STREAMS_URL}\n**Password:** `{password}`"
+                )
 
             # Format date nicely
             try:
-                dt = datetime.strptime(date_str, '%Y-%m-%d')
-                formatted_date = dt.strftime('%-d %b %Y')
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                formatted_date = dt.strftime("%-d %b %Y")
             except Exception:
                 formatted_date = date_str
 
@@ -130,8 +178,8 @@ class MatchNotificationService:
             return None
         try:
             # Handle both Z suffix and +00:00 format
-            if date_str.endswith('Z'):
-                date_str = date_str[:-1] + '+00:00'
+            if date_str.endswith("Z"):
+                date_str = date_str[:-1] + "+00:00"
             return datetime.fromisoformat(date_str)
         except Exception:
             return None
@@ -144,7 +192,7 @@ class MatchNotificationService:
         time_slots: Dict[str, List[Dict[str, Any]]] = {}
 
         for match in matches:
-            match_id = match.get('id')
+            match_id = match.get("id")
             if not match_id:
                 continue
 
@@ -153,13 +201,13 @@ class MatchNotificationService:
                 continue
 
             # Get scheduled time
-            scheduled_time = self._parse_match_time(match.get('date'))
+            scheduled_time = self._parse_match_time(match.get("date"))
             if not scheduled_time:
                 continue
 
             # Check if kick-off time has passed but match hasn't ended
-            status = match.get('status')
-            if now >= scheduled_time and status != 'STATUS_FULL_TIME':
+            status = match.get("status")
+            if now >= scheduled_time and status != "STATUS_FULL_TIME":
                 # Use the scheduled time as the grouping key
                 time_key = scheduled_time.isoformat()
                 if time_key not in time_slots:
@@ -177,7 +225,15 @@ class MatchNotificationService:
 
         # Build description with all matches
         match_names = [get_match_display_name(m) for m in matches]
-        description = '\n'.join(match_names)
+        description = "\n".join(match_names)
+
+        # Add streams info if configured
+        if STREAMS_URL:
+            password = self._get_streams_password()
+            if password:
+                description += (
+                    f"\n\n**Watch Live:** {STREAMS_URL}\n**Password:** `{password}`"
+                )
 
         # Use singular or plural title
         title = "KICK-OFF" if len(matches) == 1 else "KICK-OFFS"
@@ -190,7 +246,7 @@ class MatchNotificationService:
 
         if success:
             for match in matches:
-                match_id = match.get('id')
+                match_id = match.get("id")
                 event_key = f"{match_id}_kickoff"
                 self.notified_events.add(event_key)
             save_data(list(self.notified_events), NOTIFIED_EVENTS_FILE)
@@ -198,16 +254,21 @@ class MatchNotificationService:
 
     async def _check_for_fulltime(self, match: Dict[str, Any]) -> None:
         """Check if match has ended and notify."""
-        match_id = match.get('id')
+        match_id = match.get("id")
         if not match_id:
             return
 
-        current_status = match.get('status')
+        current_status = match.get("status")
         previous_status = self.match_states.get(match_id)
 
         # Detect full-time
-        if current_status == 'STATUS_FULL_TIME' and previous_status != 'STATUS_FULL_TIME':
-            espn_logger.info(f"Match {match_id} ended: {previous_status} -> {current_status}")
+        if (
+            current_status == "STATUS_FULL_TIME"
+            and previous_status != "STATUS_FULL_TIME"
+        ):
+            espn_logger.info(
+                f"Match {match_id} ended: {previous_status} -> {current_status}"
+            )
             await self._notify_final_score(match)
 
         # Update state if changed
@@ -217,7 +278,7 @@ class MatchNotificationService:
 
     async def _notify_final_score(self, match: Dict[str, Any]) -> None:
         """Send final score notification."""
-        match_id = match.get('id')
+        match_id = match.get("id")
         event_key = f"{match_id}_fulltime"
 
         if event_key in self.notified_events:
@@ -238,24 +299,24 @@ class MatchNotificationService:
 
     async def _check_for_goals(self, match: Dict[str, Any]) -> None:
         """Check for new goals in a match and add to pending if not covered by Reddit."""
-        match_id = match.get('id')
+        match_id = match.get("id")
         if not match_id:
             return
 
         # Only check for goals in live matches
-        status = match.get('status')
-        if status not in ('STATUS_FIRST_HALF', 'STATUS_SECOND_HALF', 'STATUS_HALFTIME'):
+        status = match.get("status")
+        if status not in ("STATUS_FIRST_HALF", "STATUS_SECOND_HALF", "STATUS_HALFTIME"):
             return
 
-        home_team = match.get('home_team', {})
-        away_team = match.get('away_team', {})
-        home_name = home_team.get('name', 'Unknown')
-        away_name = away_team.get('name', 'Unknown')
-        home_score = home_team.get('score', '0')
-        away_score = away_team.get('score', '0')
+        home_team = match.get("home_team", {})
+        away_team = match.get("away_team", {})
+        home_name = home_team.get("name", "Unknown")
+        away_name = away_team.get("name", "Unknown")
+        home_score = home_team.get("score", "0")
+        away_score = away_team.get("score", "0")
 
         # Get goals from match data
-        goals = match.get('goals', [])
+        goals = match.get("goals", [])
         if not goals:
             return
 
@@ -283,20 +344,22 @@ class MatchNotificationService:
                 # Check if Reddit already posted this goal
                 posted_scores = load_data(POSTED_SCORES_FILE, {})
                 if self._reddit_posted_goal(goal_key, {}, posted_scores):
-                    espn_logger.info(f"Reddit already covered goal, skipping pending: {goal_key}")
+                    espn_logger.info(
+                        f"Reddit already covered goal, skipping pending: {goal_key}"
+                    )
                     continue
 
                 # Add to pending goals (wait for Reddit)
                 self.pending_goals[goal_key] = {
-                    'detected_at': datetime.now(timezone.utc).isoformat(),
-                    'match_id': match_id,
-                    'home_team': home_name,
-                    'away_team': away_name,
-                    'home_score': home_score,
-                    'away_score': away_score,
-                    'scorer': goal.get('scorer', 'Unknown'),
-                    'minute': goal.get('minute', ''),
-                    'scoring_team': goal.get('team', ''),
+                    "detected_at": datetime.now(timezone.utc).isoformat(),
+                    "match_id": match_id,
+                    "home_team": home_name,
+                    "away_team": away_name,
+                    "home_score": home_score,
+                    "away_score": away_score,
+                    "scorer": goal.get("scorer", "Unknown"),
+                    "minute": goal.get("minute", ""),
+                    "scoring_team": goal.get("team", ""),
                 }
                 save_data(self.pending_goals, PENDING_GOALS_FILE)
                 espn_logger.info(f"Added goal to pending: {goal_key}")
@@ -304,19 +367,21 @@ class MatchNotificationService:
             except Exception as e:
                 espn_logger.error(f"Error processing goal: {e}")
 
-    def _generate_goal_key(self, match: Dict[str, Any], goal: Dict[str, Any]) -> Optional[str]:
+    def _generate_goal_key(
+        self, match: Dict[str, Any], goal: Dict[str, Any]
+    ) -> Optional[str]:
         """Generate a canonical key for a goal event.
 
         Format: {team1}_vs_{team2}_{scorer}_{minute}
         Uses scorer name instead of score to avoid re-detection when match score changes.
         """
         try:
-            home_team = match.get('home_team', {})
-            away_team = match.get('away_team', {})
-            home_name = normalize_team_name(home_team.get('name', ''))
-            away_name = normalize_team_name(away_team.get('name', ''))
-            scorer = normalize_player_name(goal.get('scorer', ''))
-            minute = goal.get('minute', '').split('+')[0]  # Base minute only
+            home_team = match.get("home_team", {})
+            away_team = match.get("away_team", {})
+            home_name = normalize_team_name(home_team.get("name", ""))
+            away_name = normalize_team_name(away_team.get("name", ""))
+            scorer = normalize_player_name(goal.get("scorer", ""))
+            minute = goal.get("minute", "").split("+")[0]  # Base minute only
 
             if not home_name or not away_name or not minute or not scorer:
                 return None
@@ -341,7 +406,7 @@ class MatchNotificationService:
 
         for goal_key, goal_data in self.pending_goals.items():
             try:
-                detected_at = datetime.fromisoformat(goal_data['detected_at'])
+                detected_at = datetime.fromisoformat(goal_data["detected_at"])
                 elapsed = (now - detected_at).total_seconds()
 
                 # Check if Reddit has posted this goal
@@ -355,7 +420,9 @@ class MatchNotificationService:
                     continue
 
                 # Reddit didn't post within window - post ESPN fallback
-                espn_logger.info(f"Reddit didn't cover goal after {GOAL_FALLBACK_SECONDS}s, posting fallback: {goal_key}")
+                espn_logger.info(
+                    f"Reddit didn't cover goal after {GOAL_FALLBACK_SECONDS}s, posting fallback: {goal_key}"
+                )
                 await self._post_goal_fallback(goal_data)
                 goals_to_remove.append(goal_key)
 
@@ -384,11 +451,13 @@ class MatchNotificationService:
             return False
 
         # Parse the ESPN goal key (format: teams_key_scorer_minute)
-        parts = goal_key.rsplit('_', 2)
+        parts = goal_key.rsplit("_", 2)
         if len(parts) != 3:
             return False
 
-        teams_key, _, minute = parts  # scorer is in the middle, we don't need it for matching
+        teams_key, _, minute = (
+            parts  # scorer is in the middle, we don't need it for matching
+        )
 
         try:
             goal_minute = int(minute)
@@ -397,7 +466,7 @@ class MatchNotificationService:
 
         # Check for matching Reddit posts with minute tolerance
         for reddit_key in posted_scores.keys():
-            reddit_parts = reddit_key.rsplit('_', 2)
+            reddit_parts = reddit_key.rsplit("_", 2)
             if len(reddit_parts) != 3:
                 continue
 
@@ -411,7 +480,9 @@ class MatchNotificationService:
             try:
                 reddit_min = int(reddit_minute)
                 if abs(reddit_min - goal_minute) <= 2:
-                    espn_logger.debug(f"Found Reddit match: {reddit_key} for ESPN goal at minute {goal_minute}")
+                    espn_logger.debug(
+                        f"Found Reddit match: {reddit_key} for ESPN goal at minute {goal_minute}"
+                    )
                     return True
             except ValueError:
                 continue
@@ -420,13 +491,13 @@ class MatchNotificationService:
 
     async def _post_goal_fallback(self, goal_data: Dict[str, Any]) -> None:
         """Post ESPN goal fallback notification."""
-        home_team = goal_data.get('home_team', 'Unknown')
-        away_team = goal_data.get('away_team', 'Unknown')
-        home_score = goal_data.get('home_score', '0')
-        away_score = goal_data.get('away_score', '0')
-        scorer = goal_data.get('scorer', 'Unknown')
-        minute = goal_data.get('minute', '')
-        scoring_team = goal_data.get('scoring_team', '')
+        home_team = goal_data.get("home_team", "Unknown")
+        away_team = goal_data.get("away_team", "Unknown")
+        home_score = goal_data.get("home_score", "0")
+        away_score = goal_data.get("away_score", "0")
+        scorer = goal_data.get("scorer", "Unknown")
+        minute = goal_data.get("minute", "")
+        scoring_team = goal_data.get("scoring_team", "")
 
         # Get team branding for scoring team
         team_data = map_espn_team_to_config(scoring_team)
@@ -439,9 +510,9 @@ class MatchNotificationService:
         # Get team color and logo
         color = 0x00FF00  # Green for goal
         thumbnail_url = None
-        if team_data and 'data' in team_data:
-            color = team_data['data'].get('color', color)
-            thumbnail_url = team_data['data'].get('logo')
+        if team_data and "data" in team_data:
+            color = team_data["data"].get("color", color)
+            thumbnail_url = team_data["data"].get("logo")
 
         await self._post_embed(
             title="GOAL!",
@@ -454,14 +525,14 @@ class MatchNotificationService:
         home_norm = normalize_team_name(home_team)
         away_norm = normalize_team_name(away_team)
         teams_key = "_vs_".join(sorted([home_norm, away_norm]))
-        base_minute = minute.split('+')[0] if minute else ''
+        base_minute = minute.split("+")[0] if minute else ""
         if teams_key and base_minute:
             covered_key = f"{teams_key}_{base_minute}"
             covered_goals = load_data(ESPN_COVERED_GOALS_FILE, {})
             covered_goals[covered_key] = {
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'scorer': scorer,
-                'score': f"{home_score}-{away_score}"
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "scorer": scorer,
+                "score": f"{home_score}-{away_score}",
             }
             save_data(covered_goals, ESPN_COVERED_GOALS_FILE)
             espn_logger.info(f"Tracked ESPN-covered goal: {covered_key}")
@@ -506,7 +577,9 @@ class MatchNotificationService:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(DISCORD_WEBHOOK_URL, json=webhook_data) as response:
+                async with session.post(
+                    DISCORD_WEBHOOK_URL, json=webhook_data
+                ) as response:
                     if response.status == 429:
                         webhook_logger.warning(
                             f"Rate limited by Discord. Retry after: {response.headers.get('Retry-After', 'unknown')} seconds"
