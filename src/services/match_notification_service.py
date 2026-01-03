@@ -17,7 +17,7 @@ from src.utils.match_utils import (
 )
 from src.utils.persistence import save_data, load_data
 from src.utils.logger import webhook_logger
-from src.utils.score_utils import normalize_team_name
+from src.utils.score_utils import normalize_team_name, normalize_player_name
 
 # Persistence files
 MATCH_STATE_FILE = os.path.join(DATA_DIR, 'match_states.pkl')
@@ -308,7 +308,7 @@ class MatchNotificationService:
             away_team = match.get('away_team', {})
             home_name = normalize_team_name(home_team.get('name', ''))
             away_name = normalize_team_name(away_team.get('name', ''))
-            scorer = goal.get('scorer', '').lower().replace(' ', '').replace('.', '').replace('-', '')
+            scorer = normalize_player_name(goal.get('scorer', ''))
             minute = goal.get('minute', '').split('+')[0]  # Base minute only
 
             if not home_name or not away_name or not minute or not scorer:

@@ -148,53 +148,44 @@ def test_canonical_key_strips_brackets():
 class TestEspnRedditGoalKeyMatching:
     """Test cross-system goal key matching between ESPN and Reddit.
 
-    ESPN keys use scorer names: teams_scorer_minute
+    ESPN keys use scorer surnames: teams_scorer_minute
     Reddit keys use scores: teams_score_minute
 
     Both must parse correctly with rsplit('_', 2) to extract teams for matching.
+    Uses normalize_player_name() to extract surname only - consistent with Reddit deduplication.
     """
 
     @pytest.mark.parametrize(
-        "scorer_name,expected_scorer_in_key",
+        "scorer_name,expected_surname",
         [
-            ("John McGinn", "johnmcginn"),
-            ("Ollie Watkins", "olliewatkins"),
-            ("Morgan Gibbs-White", "morgangibbswhite"),
-            ("Son Heung-min", "sonheungmin"),
-            ("Bruno Fernandes", "brunofernandes"),
-            ("N. Jackson", "njackson"),
-            ("K. De Bruyne", "kdebruyne"),
+            ("John McGinn", "mcginn"),
+            ("J. McGinn", "mcginn"),
+            ("Ollie Watkins", "watkins"),
+            ("O. Watkins", "watkins"),
+            ("Morgan Gibbs-White", "gibbswhite"),
+            ("Son Heung-min", "heungmin"),
+            ("Bruno Fernandes", "fernandes"),
+            ("N. Jackson", "jackson"),
+            ("K. De Bruyne", "bruyne"),
+            ("Virgil van Dijk", "dijk"),
         ],
     )
-    def test_espn_scorer_name_no_underscores(self, scorer_name: str, expected_scorer_in_key: str):
-        """Scorer names must NOT contain underscores after normalization.
+    def test_espn_scorer_normalized_to_surname(self, scorer_name: str, expected_surname: str):
+        """ESPN scorer names should normalize to surname only using normalize_player_name().
 
-        If scorer names contain underscores (e.g., john_mcginn), rsplit('_', 2)
-        will incorrectly parse the key and teams won't match.
+        This matches how Reddit normalizes player names for deduplication.
         """
-        normalized = scorer_name.lower().replace(' ', '').replace('.', '').replace('-', '')
-        assert '_' not in normalized, f"Scorer '{scorer_name}' contains underscore after normalization: {normalized}"
-        assert normalized == expected_scorer_in_key
+        normalized = normalize_player_name(scorer_name)
+        assert '_' not in normalized, f"Scorer '{scorer_name}' contains underscore: {normalized}"
+        assert normalized == expected_surname
 
-    def test_espn_key_parses_correctly_with_multiword_scorer(self):
-        """ESPN key with multi-word scorer must parse correctly with rsplit('_', 2)."""
-        # After fix: scorer has no underscores
-        espn_key = "aston villa_vs_nottingham forest_johnmcginn_73"
+    def test_espn_key_parses_correctly_with_surname(self):
+        """ESPN key with surname-only scorer parses correctly with rsplit('_', 2)."""
+        espn_key = "aston villa_vs_nottingham forest_mcginn_73"
         parts = espn_key.rsplit('_', 2)
 
         assert len(parts) == 3
         assert parts[0] == "aston villa_vs_nottingham forest"
-        assert parts[1] == "johnmcginn"
-        assert parts[2] == "73"
-
-    def test_espn_key_with_underscore_scorer_fails_parsing(self):
-        """Demonstrate the bug: underscore in scorer breaks rsplit parsing."""
-        # Bug case: scorer has underscore
-        broken_key = "aston villa_vs_nottingham forest_john_mcginn_73"
-        parts = broken_key.rsplit('_', 2)
-
-        # This incorrectly includes 'john' in teams
-        assert parts[0] == "aston villa_vs_nottingham forest_john"  # WRONG
         assert parts[1] == "mcginn"
         assert parts[2] == "73"
 
@@ -208,35 +199,30 @@ class TestEspnRedditGoalKeyMatching:
         assert parts[1] == "3-1"
         assert parts[2] == "73"
 
-    def test_espn_reddit_teams_match_after_fix(self):
-        """After fix, ESPN and Reddit keys must have matching teams."""
-        # Fixed ESPN key (no underscore in scorer)
-        espn_key = "aston villa_vs_nottingham forest_johnmcginn_73"
+    def test_espn_reddit_teams_match(self):
+        """ESPN and Reddit keys must have matching teams."""
+        espn_key = "aston villa_vs_nottingham forest_mcginn_73"
         reddit_key = "aston villa_vs_nottingham forest_3-1_73"
 
         espn_parts = espn_key.rsplit('_', 2)
         reddit_parts = reddit_key.rsplit('_', 2)
 
-        # Teams should match
         assert espn_parts[0] == reddit_parts[0], (
             f"Teams mismatch: ESPN={espn_parts[0]}, Reddit={reddit_parts[0]}"
         )
-        # Minutes should match
         assert espn_parts[2] == reddit_parts[2]
 
     @pytest.mark.parametrize(
         "espn_key,reddit_key,should_match_teams",
         [
-            # Fixed keys - teams match
-            ("aston villa_vs_nottingham forest_johnmcginn_73", "aston villa_vs_nottingham forest_3-1_73", True),
-            ("arsenal_vs_chelsea_bukayosaka_45", "arsenal_vs_chelsea_1-0_45", True),
-            ("liverpool_vs_manchester city_mosalah_90", "liverpool_vs_manchester city_2-2_90", True),
-            # Broken keys (bug case) - teams don't match
-            ("aston villa_vs_nottingham forest_john_mcginn_73", "aston villa_vs_nottingham forest_3-1_73", False),
+            # Surname-only keys - teams match
+            ("aston villa_vs_nottingham forest_mcginn_73", "aston villa_vs_nottingham forest_3-1_73", True),
+            ("arsenal_vs_chelsea_saka_45", "arsenal_vs_chelsea_1-0_45", True),
+            ("liverpool_vs_manchester city_salah_90", "liverpool_vs_manchester city_2-2_90", True),
         ],
     )
     def test_cross_system_team_matching(self, espn_key: str, reddit_key: str, should_match_teams: bool):
-        """Verify ESPN and Reddit key team extraction matches or fails as expected."""
+        """Verify ESPN and Reddit key team extraction matches."""
         espn_parts = espn_key.rsplit('_', 2)
         reddit_parts = reddit_key.rsplit('_', 2)
 
