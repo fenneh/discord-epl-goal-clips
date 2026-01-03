@@ -280,6 +280,12 @@ class MatchNotificationService:
                 self.known_goals[match_id].append(goal_key)
                 save_data(self.known_goals, KNOWN_GOALS_FILE)
 
+                # Check if Reddit already posted this goal
+                posted_scores = load_data(POSTED_SCORES_FILE, {})
+                if self._reddit_posted_goal(goal_key, {}, posted_scores):
+                    espn_logger.info(f"Reddit already covered goal, skipping pending: {goal_key}")
+                    continue
+
                 # Add to pending goals (wait for Reddit)
                 self.pending_goals[goal_key] = {
                     'detected_at': datetime.now(timezone.utc).isoformat(),
