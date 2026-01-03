@@ -203,7 +203,7 @@ def generate_canonical_key(goal_info: Dict[str, Optional[str]]) -> Optional[str]
     # Use base minute to handle minor variations in injury time reporting
     base_minute = minute.split('+')[0]
     # Normalize score by removing spaces and brackets
-    score_key = re.sub(r'[\\[\\]\\s]', '', score)
+    score_key = re.sub(r'[\[\]\s]', '', score)
     key = f"{teams_key}_{score_key}_{base_minute}"
     app_logger.debug(f"Generated canonical key: {key}")
     return key

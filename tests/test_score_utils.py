@@ -117,3 +117,29 @@ def test_duplicate_detection(title1, title2, should_match, time_diff):
     )
 
     assert is_duplicate == should_match
+
+
+def test_canonical_key_strips_brackets():
+    """Verify canonical key strips brackets from score for ESPN compatibility.
+
+    Reddit titles have brackets indicating scoring team: '[1] - 0' or '1 - [2]'
+    ESPN keys use plain scores: '1-0' or '1-2'
+    Keys must match for cross-system deduplication to work.
+    """
+    # Home team scores
+    info = extract_goal_info("Aston Villa [1] - 0 Nottingham Forest - Ollie Watkins 45+1'")
+    assert info is not None
+    key = generate_canonical_key(info)
+    assert key is not None
+    # Key should have score WITHOUT brackets
+    assert "_1-0_" in key, f"Expected '1-0' in key but got: {key}"
+    assert "[" not in key, f"Brackets should be stripped but got: {key}"
+    assert "]" not in key, f"Brackets should be stripped but got: {key}"
+
+    # Away team scores
+    info = extract_goal_info("Liverpool 2 - [3] Manchester City - Erling Haaland 90'")
+    assert info is not None
+    key = generate_canonical_key(info)
+    assert key is not None
+    assert "_2-3_" in key, f"Expected '2-3' in key but got: {key}"
+    assert "[" not in key, f"Brackets should be stripped but got: {key}"
