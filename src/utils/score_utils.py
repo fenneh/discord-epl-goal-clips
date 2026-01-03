@@ -114,6 +114,9 @@ def extract_goal_info(title: str) -> Optional[Dict[str, Optional[str]]]:
         dict: Dictionary containing score, minute, and scorer if found
     """
     try:
+        # Remove invisible Unicode control characters that break regex parsing
+        title = re.sub(r'[\u200b-\u200f\u202a-\u202e\ufeff]', '', title)
+
         # Extract score pattern and minute
         score_match = re.search(r'(\d+\s*-\s*\[\d+\]|\[\d+\]\s*-\s*\d+)', title)
         # Handle injury time minutes (e.g., 90+2)
