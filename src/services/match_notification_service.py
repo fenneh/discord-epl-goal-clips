@@ -25,6 +25,7 @@ DAILY_POSTED_FILE = os.path.join(DATA_DIR, 'daily_schedule_posted.pkl')
 NOTIFIED_EVENTS_FILE = os.path.join(DATA_DIR, 'notified_events.pkl')
 KNOWN_GOALS_FILE = os.path.join(DATA_DIR, 'known_goals.pkl')
 PENDING_GOALS_FILE = os.path.join(DATA_DIR, 'pending_goals.pkl')
+ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, 'espn_covered_goals.pkl')
 
 # Premier League logo for schedule posts
 PL_LOGO = "https://resources.premierleague.com/premierleague/competitions/competition_1_small.png"
@@ -442,6 +443,22 @@ class MatchNotificationService:
             color=color,
             thumbnail_url=thumbnail_url,
         )
+
+        # Track this goal as covered by ESPN so Reddit won't post duplicate
+        home_norm = normalize_team_name(home_team)
+        away_norm = normalize_team_name(away_team)
+        teams_key = "_vs_".join(sorted([home_norm, away_norm]))
+        base_minute = minute.split('+')[0] if minute else ''
+        if teams_key and base_minute:
+            covered_key = f"{teams_key}_{base_minute}"
+            covered_goals = load_data(ESPN_COVERED_GOALS_FILE, {})
+            covered_goals[covered_key] = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'scorer': scorer,
+                'score': f"{home_score}-{away_score}"
+            }
+            save_data(covered_goals, ESPN_COVERED_GOALS_FILE)
+            espn_logger.info(f"Tracked ESPN-covered goal: {covered_key}")
 
     async def _post_embed(
         self,

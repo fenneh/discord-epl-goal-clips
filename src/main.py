@@ -11,7 +11,7 @@ import asyncpraw
 import asyncpraw.exceptions
 from fastapi import FastAPI, BackgroundTasks
 
-from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES
+from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES, DATA_DIR
 from src.services.discord_service import post_to_discord, post_mp4_link
 from src.services.reddit_service import (
     create_reddit_client,
@@ -28,6 +28,55 @@ from src.utils.score_utils import (
 )
 from src.utils.url_utils import get_domain_info
 from src.services.match_notification_service import match_notification_service
+
+import os
+ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, 'espn_covered_goals.pkl')
+
+def check_espn_covered_goal(goal_info: dict) -> bool:
+    """Check if ESPN already posted a notification for this goal.
+
+    Args:
+        goal_info: Goal info dict with team1, team2, minute fields
+
+    Returns:
+        True if ESPN already covered this goal, False otherwise
+    """
+    if not goal_info:
+        return False
+
+    covered_goals = load_data(ESPN_COVERED_GOALS_FILE, {})
+    if not covered_goals:
+        return False
+
+    team1 = goal_info.get('team1', '')
+    team2 = goal_info.get('team2', '')
+    minute = goal_info.get('minute', '').split('+')[0]
+
+    if not team1 or not team2 or not minute:
+        return False
+
+    teams_key = "_vs_".join(sorted([team1, team2]))
+
+    try:
+        goal_minute = int(minute)
+    except ValueError:
+        return False
+
+    for covered_key in covered_goals:
+        parts = covered_key.rsplit('_', 1)
+        if len(parts) != 2:
+            continue
+        covered_teams, covered_minute = parts
+        if covered_teams != teams_key:
+            continue
+        try:
+            if abs(int(covered_minute) - goal_minute) <= 2:
+                app_logger.info(f"ESPN already covered goal: {covered_key}")
+                return True
+        except ValueError:
+            continue
+
+    return False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -240,51 +289,54 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         app_logger.info(f"URL:       {url}")
         app_logger.info(f"Teams:     {team_data.get('name', 'Unknown Team Found')} (Scoring: {team_data.get('is_scoring', 'N/A')})") # Log matched team and scoring status
         app_logger.info("-" * 40)
-        
-        # Post initial content to Discord with both URLs in embed
-        original_url = submission.url  # Get the original URL directly from submission
-        content = f"{title}\n{original_url}\n{reddit_url}"  # Include both URLs
+
+        original_url = submission.url
+
+        # Check if ESPN already covered this goal - if so, only post MP4
+        if current_info and check_espn_covered_goal(current_info):
+            app_logger.info("[ESPN COVERED] Goal already announced by ESPN, posting MP4 only")
+            mp4_url = await extract_mp4_with_retries(submission)
+            if mp4_url:
+                await post_mp4_link(title, mp4_url, team_data)
+                app_logger.info(f"Posted MP4 for ESPN-covered goal: {mp4_url}")
+            else:
+                app_logger.warning("Could not extract MP4 for ESPN-covered goal")
+            # Mark as processed
+            posted_urls.add(url)
+            save_data(posted_urls, POSTED_URLS_FILE)
+            return True
+
+        # Normal flow: Post full embed + MP4
+        content = f"{title}\n{original_url}\n{reddit_url}"
         app_logger.info(f"Posting initial content:\n{content}")
-        await post_to_discord(content, team_data) # Pass the full team_data dict
-        
+        await post_to_discord(content, team_data)
+
         # Store score with Reddit post URL and video URL, using canonical key if available
         if canonical_key:
             posted_scores[canonical_key] = {
-                'timestamp': current_time.isoformat(),
-                'url': original_url,  # Store original URL
-                'reddit_url': reddit_url,
-                'original_title': title # Store original title for reference
-            }
-            app_logger.info(f"Stored score with key '{canonical_key}' - Original: {original_url}, Reddit: {reddit_url}")
-        else:
-            # Fallback: Store by original title if key couldn't be generated
-            # Note: This won't prevent duplicates effectively if titles vary slightly.
-             posted_scores[title] = {
                 'timestamp': current_time.isoformat(),
                 'url': original_url,
                 'reddit_url': reddit_url,
                 'original_title': title
             }
-             app_logger.warning(f"Stored score using original title as key (no canonical key) - Original: {original_url}, Reddit: {reddit_url}")
+            app_logger.info(f"Stored score with key '{canonical_key}' - Original: {original_url}, Reddit: {reddit_url}")
+        else:
+            posted_scores[title] = {
+                'timestamp': current_time.isoformat(),
+                'url': original_url,
+                'reddit_url': reddit_url,
+                'original_title': title
+            }
+            app_logger.warning(f"Stored score using original title as key (no canonical key) - Original: {original_url}, Reddit: {reddit_url}")
 
-        # Save posted_scores data (only need to save once)
         save_data(posted_scores, POSTED_SCORES_FILE)
-        
-        # Store score with Reddit post URL and video URL (OLD LOGIC - REMOVE/COMMENT OUT)
-        # posted_scores[title] = {
-        #     'timestamp': current_time.isoformat(),
-        #     'url': original_url,  # Store original URL
-        #     'reddit_url': reddit_url
-        # }
-        # app_logger.info(f"Stored URLs - Original: {original_url}, Reddit: {reddit_url}")
-        
+
         # Try to extract MP4 link with retries
         mp4_url = await extract_mp4_with_retries(submission)
         app_logger.info(f"Extracted MP4 URL: {mp4_url}")
-        
-        if mp4_url and mp4_url != original_url:  # Only post MP4 if it's different from original URL
+
+        if mp4_url and mp4_url != original_url:
             app_logger.info("Posting MP4 URL (different from original)")
-            # Send just the raw MP4 URL
             await post_mp4_link(title, mp4_url, team_data)
         else:
             app_logger.info(f"Skipping MP4 post - {'No MP4 URL found' if not mp4_url else 'Same as original URL'}")
