@@ -143,7 +143,8 @@ def contains_goal_keyword(title: str) -> bool:
         "penalty",
         "free kick",
         "volley",
-        "⚽",  # Added soccer ball emoji
+        "red card",
+        "⚽",
     }
 
     return any(indicator in title_lower for indicator in goal_indicators)
