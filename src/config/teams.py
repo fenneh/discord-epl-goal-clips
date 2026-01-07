@@ -120,7 +120,7 @@ premier_league_teams = {
         "name": "Sunderland",
         "aliases": ["Sunderland", "The Black Cats", "SAFC"],
         "color": 0xEB172B,  # Red
-        "logo": "https://resources.premierleague.com/premierleague/badges/t45.png",
+        "logo": "https://resources.premierleague.com/premierleague/badges/t56.png",
     },
     "Tottenham": {
         "name": "Tottenham Hotspur",
