@@ -119,22 +119,23 @@ def find_team_in_title(
         return None
 
     # Look for score patterns first
+    # Pattern index determines which team scored:
+    # 0: bracket on left score [X] - Y → team1 scored
+    # 1: bracket on right score X - [Y] → team2 scored
+    # 2: both bracketed [X-Y] → ambiguous
     score_patterns = [
-        # More robust patterns allowing for different spacing and bracket positions
         r"^(.*?)\s*\[(\d+)\]\s*-\s*(\d+)\s*(.*?)$",  # Team1 [1] - 0 Team2
         r"^(.*?)\s*(\d+)\s*-\s*\[(\d+)\]\s*(.*?)$",  # Team1 0 - [1] Team2
         r"^(.*?)\s*\[(\d+)\s*-\s*(\d+)\]\s*(.*?)$",  # Team1 [1-0] Team2
-        # r'^(.*?)\s*(\d+)\s*-\s*(\d+)\s*\[(.*)\]\s*-\' # Team1 1 - 0 [Team2 goal] - (Less common but possible)
-        # Commenting out the potentially problematic pattern for now
     ]
 
     matched_pl_team_data = None  # Store the first matched PL team data
 
     # Try score patterns first
-    for pattern in score_patterns:
+    for pattern_idx, pattern in enumerate(score_patterns):
         match = re.search(pattern, title_lower, re.IGNORECASE)
         if match:
-            app_logger.debug(f"Score pattern matched: {pattern}")
+            app_logger.debug(f"Score pattern {pattern_idx} matched: {pattern}")
             groups = match.groups()
 
             # Extract teams based on pattern type
@@ -153,26 +154,23 @@ def find_team_in_title(
                 f"Extracted teams from score pattern: '{team1_str}' vs '{team2_str}'"
             )
 
-            # Determine which team likely scored based on bracket position in the *original* title
-            # Find the first hyphen surrounded by spaces
-            hyphen_match = re.search(r"\s+-\s+", title)
-            if hyphen_match:
-                split_point = hyphen_match.start()
-                part1 = title[:split_point]
-                part2 = title[split_point:]
-                is_team1_scoring = "[" in part1 and "]" in part1
-                is_team2_scoring = "[" in part2 and "]" in part2
-
-                # Prefer the team string associated with the bracket
-                scoring_team_str = team1_str if is_team1_scoring else team2_str
-
-                # If brackets appear in both or neither part (e.g., [1-0]), scoring team is ambiguous here
-                if is_team1_scoring == is_team2_scoring:
-                    scoring_team_str = (
-                        None  # Cannot determine priority based on brackets
-                    )
+            # Determine which team scored based on WHICH PATTERN matched
+            # This is more reliable than hyphen-based detection which can find wrong hyphens
+            if pattern_idx == 0:
+                # Pattern 0: [X] - Y → bracket on left score → team1 scored
+                is_team1_scoring = True
+                is_team2_scoring = False
+                scoring_team_str = team1_str
+            elif pattern_idx == 1:
+                # Pattern 1: X - [Y] → bracket on right score → team2 scored
+                is_team1_scoring = False
+                is_team2_scoring = True
+                scoring_team_str = team2_str
             else:
-                scoring_team_str = None  # Cannot determine priority if standard hyphen separator not found
+                # Pattern 2: [X-Y] → both bracketed → ambiguous
+                is_team1_scoring = False
+                is_team2_scoring = False
+                scoring_team_str = None
 
             # Check both extracted team strings against PL teams
             team1_match_data = None
