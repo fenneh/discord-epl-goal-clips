@@ -144,6 +144,7 @@ def contains_goal_keyword(title: str) -> bool:
         "free kick",
         "volley",
         "red card",
+        "second yellow",
         "⚽",
     }
 
