@@ -64,6 +64,8 @@ class MatchNotificationService:
         self.pending_goals: Dict[str, Dict[str, Any]] = load_data(
             PENDING_GOALS_FILE, {}
         )
+        # Track password reset per day: {date_str: True}
+        self.password_reset_today: Dict[str, bool] = {}
 
     def _generate_streams_password(self) -> str:
         """Generate a new streams password and save to file."""
@@ -90,11 +92,74 @@ class MatchNotificationService:
             espn_logger.error(f"Error reading streams password: {e}")
         return None
 
+    async def _reset_streams_password(self) -> Optional[str]:
+        """Reset the streams password and post to Discord webhook."""
+        today_str = get_today_uk_date_str()
+
+        if self.password_reset_today.get(today_str):
+            return None  # Already reset today
+
+        # Generate new password
+        password = f"imperium{random.randint(1000, 9999)}"
+
+        # Write to file
+        try:
+            with open(STREAMS_PASSWORD_FILE, "w") as f:
+                f.write(f"{today_str}\n{password}\n")
+            espn_logger.info(f"Reset streams password for {today_str}")
+        except Exception as e:
+            espn_logger.error(f"Failed to write password: {e}")
+            return None
+
+        # Post to Discord
+        await self._post_password_webhook(password)
+
+        self.password_reset_today[today_str] = True
+        return password
+
+    async def _post_password_webhook(self, password: str) -> None:
+        """Post password reset notification to Discord webhook."""
+        if not DISCORD_WEBHOOK_URL:
+            return
+
+        streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
+
+        embed = {
+            "title": "Daily Password Reset",
+            "description": f"**Password:** `{password}`\n\n**Watch:** {streams_url}",
+            "color": PL_COLOR,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        webhook_data = {
+            "username": DISCORD_USERNAME,
+            "avatar_url": DISCORD_AVATAR_URL,
+            "embeds": [embed],
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    DISCORD_WEBHOOK_URL, json=webhook_data
+                ) as response:
+                    if response.status == 204:
+                        espn_logger.info("Posted password reset to Discord")
+                    else:
+                        espn_logger.error(
+                            f"Failed to post password reset: {response.status}"
+                        )
+        except Exception as e:
+            espn_logger.error(f"Error posting password webhook: {e}")
+
     async def check_and_notify(self) -> None:
         """Main check method - called from periodic loop."""
         try:
             now_uk = get_current_uk_time()
             today_str = get_today_uk_date_str()
+
+            # Password reset at 7:50am UK (10 mins before schedule post)
+            if now_uk.hour == 7 and now_uk.minute >= 50:
+                await self._reset_streams_password()
 
             # Check if 8am UK and haven't posted today's schedule
             if now_uk.hour == 8 and today_str not in self.daily_posted:
@@ -142,11 +207,12 @@ class MatchNotificationService:
 
             description = "\n".join(schedule_lines)
 
-            # Generate new streams password and add to description
-            if STREAMS_URL:
-                password = self._generate_streams_password()
+            # Read streams password and add to description
+            streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
+            password = self._get_streams_password()
+            if password:
                 description += (
-                    f"\n\n**Watch Live:** {STREAMS_URL}\n**Password:** `{password}`"
+                    f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
                 )
 
             # Format date nicely
@@ -227,13 +293,13 @@ class MatchNotificationService:
         match_names = [get_match_display_name(m) for m in matches]
         description = "\n".join(match_names)
 
-        # Add streams info if configured
-        if STREAMS_URL:
-            password = self._get_streams_password()
-            if password:
-                description += (
-                    f"\n\n**Watch Live:** {STREAMS_URL}\n**Password:** `{password}`"
-                )
+        # Add streams info
+        streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
+        password = self._get_streams_password()
+        if password:
+            description += (
+                f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
+            )
 
         # Use singular or plural title
         title = "KICK-OFF" if len(matches) == 1 else "KICK-OFFS"
