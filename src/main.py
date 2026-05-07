@@ -29,9 +29,7 @@ from src.utils.score_utils import (
 from src.utils.url_utils import get_domain_info
 from src.services.match_notification_service import match_notification_service
 
-import os
-
-ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, "espn_covered_goals.pkl")
+ESPN_COVERED_GOALS_FILE = DATA_DIR / "espn_covered_goals.pkl"
 
 
 def check_espn_covered_goal(goal_info: dict) -> bool:

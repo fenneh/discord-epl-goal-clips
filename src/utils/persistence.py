@@ -1,8 +1,8 @@
 """Persistence utilities for storing and retrieving data."""
 
 import pickle
-import os
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any
 from src.utils.logger import app_logger
 
@@ -72,7 +72,7 @@ def load_data(filename: str, default: Any = None) -> Any:
     Returns:
         Data loaded from the file or default value
     """
-    if not os.path.exists(filename):
+    if not Path(filename).exists():
         return default
 
     try:

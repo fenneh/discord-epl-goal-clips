@@ -1,7 +1,6 @@
 """Logging utilities for the goal bot."""
 
 import logging
-import os
 import sys
 from logging.handlers import RotatingFileHandler
 from src.config import LOG_DIR
@@ -22,9 +21,6 @@ def setup_logger(
     Returns:
         logging.Logger: Configured logger instance
     """
-    # Create logs directory if it doesn't exist
-    os.makedirs(LOG_DIR, exist_ok=True)
-
     # Create logger
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -40,10 +36,8 @@ def setup_logger(
         "%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"
     )
 
-    # Create file handler with absolute path
-    log_path = os.path.join(LOG_DIR, log_file)
     file_handler = RotatingFileHandler(
-        log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+        LOG_DIR / log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
     )
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(level)

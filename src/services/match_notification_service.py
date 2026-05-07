@@ -1,6 +1,5 @@
 """Match notification service for posting Premier League match updates."""
 
-import os
 import random
 from datetime import datetime, timezone
 from typing import Dict, Set, Any, Optional, List
@@ -34,12 +33,12 @@ from src.utils.logger import webhook_logger
 from src.utils.score_utils import normalize_team_name, normalize_player_name
 
 # Persistence files
-MATCH_STATE_FILE = os.path.join(DATA_DIR, "match_states.pkl")
-DAILY_POSTED_FILE = os.path.join(DATA_DIR, "daily_schedule_posted.pkl")
-NOTIFIED_EVENTS_FILE = os.path.join(DATA_DIR, "notified_events.pkl")
-KNOWN_GOALS_FILE = os.path.join(DATA_DIR, "known_goals.pkl")
-PENDING_GOALS_FILE = os.path.join(DATA_DIR, "pending_goals.pkl")
-ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, "espn_covered_goals.pkl")
+MATCH_STATE_FILE = DATA_DIR / "match_states.pkl"
+DAILY_POSTED_FILE = DATA_DIR / "daily_schedule_posted.pkl"
+NOTIFIED_EVENTS_FILE = DATA_DIR / "notified_events.pkl"
+KNOWN_GOALS_FILE = DATA_DIR / "known_goals.pkl"
+PENDING_GOALS_FILE = DATA_DIR / "pending_goals.pkl"
+ESPN_COVERED_GOALS_FILE = DATA_DIR / "espn_covered_goals.pkl"
 
 # Premier League logo for schedule posts
 PL_LOGO = "https://resources.premierleague.com/premierleague/competitions/competition_1_small.png"
