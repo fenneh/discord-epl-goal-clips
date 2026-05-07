@@ -1,7 +1,6 @@
 """Configuration module for the goal bot."""
 
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -36,14 +35,14 @@ POST_AGE_MINUTES = int(os.getenv("POST_AGE_MINUTES", "5"))
 # ]
 
 # Base directory for data storage
-BASE_DIR = Path(__file__).parent.parent.parent
-DATA_DIR = BASE_DIR / "data"
-LOG_DIR = BASE_DIR / "logs"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 # Create directories if they don't exist
-DATA_DIR.mkdir(exist_ok=True)
-LOG_DIR.mkdir(exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
 
 # File paths for persistence
-POSTED_URLS_FILE = DATA_DIR / "posted_urls.pkl"
-POSTED_SCORES_FILE = DATA_DIR / "posted_scores.pkl"
+POSTED_URLS_FILE = os.path.join(DATA_DIR, "posted_urls.pkl")
+POSTED_SCORES_FILE = os.path.join(DATA_DIR, "posted_scores.pkl")
