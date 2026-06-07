@@ -1,4 +1,6 @@
-"""Match notification service for posting Premier League match updates."""
+"""Match notification service. ESPN-driven daily schedule, kickoff, full-time,
+and goal-fallback posts. Iterates configured competitions; per-fixture state is
+keyed by ESPN match id (globally unique) and per-competition where it isn't."""
 
 import os
 import random
@@ -16,6 +18,7 @@ from src.config import (
     STREAMS_URL,
     STREAMS_PASSWORD_FILE,
 )
+from src.config.competitions import Competition, EPL, list_competitions
 from src.services.espn_service import (
     fetch_todays_matches,
     get_match_display_name,
@@ -27,13 +30,13 @@ from src.utils.match_utils import (
     format_match_time_uk,
     get_current_uk_time,
     get_today_uk_date_str,
-    PL_COLOR,
 )
 from src.utils.persistence import save_data, load_data
 from src.utils.logger import webhook_logger
 from src.utils.score_utils import normalize_team_name, normalize_player_name
 
-# Persistence files
+# Persistence files (single-file shared across competitions; keys partitioned
+# either by globally-unique match id or by an explicit competition prefix).
 MATCH_STATE_FILE = os.path.join(DATA_DIR, "match_states.pkl")
 DAILY_POSTED_FILE = os.path.join(DATA_DIR, "daily_schedule_posted.pkl")
 NOTIFIED_EVENTS_FILE = os.path.join(DATA_DIR, "notified_events.pkl")
@@ -41,30 +44,27 @@ KNOWN_GOALS_FILE = os.path.join(DATA_DIR, "known_goals.pkl")
 PENDING_GOALS_FILE = os.path.join(DATA_DIR, "pending_goals.pkl")
 ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, "espn_covered_goals.pkl")
 
-# Premier League logo for schedule posts
-PL_LOGO = "https://resources.premierleague.com/premierleague/competitions/competition_1_small.png"
-
 # Goal fallback timing
-GOAL_FALLBACK_SECONDS = 30  # Wait this long for Reddit before posting ESPN fallback
+GOAL_FALLBACK_SECONDS = 30
+
+
+def _daily_posted_key(date_str: str, competition: Competition) -> str:
+    return f"{date_str}:{competition.id}"
 
 
 class MatchNotificationService:
-    """Service for managing match notifications."""
+    """Service for managing match notifications across all configured competitions."""
 
     def __init__(self):
-        # Track match states: {match_id: status}
+        # match_id keys are globally unique across ESPN leagues, so a single dict is fine.
         self.match_states: Dict[str, str] = load_data(MATCH_STATE_FILE, {})
-        # Track which days we've posted schedule for: {date_str: True}
+        # Keyed "{date}:{competition_id}" so each competition posts its own schedule daily.
         self.daily_posted: Dict[str, bool] = load_data(DAILY_POSTED_FILE, {})
-        # Track notified events: {match_id_event_type: True}
         self.notified_events: Set[str] = set(load_data(NOTIFIED_EVENTS_FILE, []))
-        # Track known goals per match: {match_id: [goal_keys]}
         self.known_goals: Dict[str, List[str]] = load_data(KNOWN_GOALS_FILE, {})
-        # Track pending goals waiting for Reddit: {goal_key: {data}}
         self.pending_goals: Dict[str, Dict[str, Any]] = load_data(
             PENDING_GOALS_FILE, {}
         )
-        # Track password reset per day: {date_str: True}
         self.password_reset_today: Dict[str, bool] = {}
 
     def _generate_streams_password(self) -> str:
@@ -97,12 +97,10 @@ class MatchNotificationService:
         today_str = get_today_uk_date_str()
 
         if self.password_reset_today.get(today_str):
-            return None  # Already reset today
+            return None
 
-        # Generate new password
         password = f"imperium{random.randint(1000, 9999)}"
 
-        # Write to file
         try:
             with open(STREAMS_PASSWORD_FILE, "w") as f:
                 f.write(f"{today_str}\n{password}\n")
@@ -111,14 +109,11 @@ class MatchNotificationService:
             espn_logger.error(f"Failed to write password: {e}")
             return None
 
-        # Post to Discord
         await self._post_password_webhook(password)
-
         self.password_reset_today[today_str] = True
         return password
 
     async def _post_password_webhook(self, password: str) -> None:
-        """Post password reset notification to Discord webhook."""
         if not DISCORD_WEBHOOK_URL:
             return
 
@@ -127,7 +122,7 @@ class MatchNotificationService:
         embed = {
             "title": "Daily Password Reset",
             "description": f"**Password:** `{password}`\n\n**Watch:** {streams_url}",
-            "color": PL_COLOR,
+            "color": EPL.color,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -152,53 +147,58 @@ class MatchNotificationService:
             espn_logger.error(f"Error posting password webhook: {e}")
 
     async def check_and_notify(self) -> None:
-        """Main check method - called from periodic loop."""
+        """Main check method — called from periodic loop."""
         try:
             now_uk = get_current_uk_time()
             today_str = get_today_uk_date_str()
 
-            # Password reset at 7:50am UK (10 mins before schedule post)
+            # Password reset stays bound to EPL streams (Imperium-specific).
             if now_uk.hour == 7 and now_uk.minute >= 50:
                 await self._reset_streams_password()
 
-            # Check if 8am UK and haven't posted today's schedule
-            if now_uk.hour == 8 and today_str not in self.daily_posted:
-                await self._post_daily_schedule(today_str)
+            for competition in list_competitions():
+                if now_uk.hour == 8 and _daily_posted_key(
+                    today_str, competition
+                ) not in self.daily_posted:
+                    await self._post_daily_schedule(today_str, competition)
 
-            # Check match state changes and goals
-            matches = fetch_todays_matches()
-            espn_logger.info(f"ESPN check: found {len(matches)} matches")
+            for competition in list_competitions():
+                matches = fetch_todays_matches(competition)
+                espn_logger.info(
+                    f"ESPN check ({competition.id}): found {len(matches)} matches"
+                )
 
-            # Check for kick-offs based on scheduled time
-            await self._check_kickoffs_by_time(matches)
+                await self._check_kickoffs_by_time(matches, competition)
 
-            for match in matches:
-                try:
-                    # Check for full-time
-                    await self._check_for_fulltime(match)
-                    # Check for goals
-                    await self._check_for_goals(match)
-                except Exception as e:
-                    espn_logger.error(f"Error checking match {match.get('id')}: {e}")
+                for match in matches:
+                    try:
+                        await self._check_for_fulltime(match, competition)
+                        await self._check_for_goals(match, competition)
+                    except Exception as e:
+                        espn_logger.error(
+                            f"Error checking match {match.get('id')}: {e}"
+                        )
 
-            # Process pending goals (post fallback if Reddit didn't cover them)
             await self._process_pending_goals()
 
         except Exception as e:
             espn_logger.error(f"Error in match notification check: {e}")
 
-    async def _post_daily_schedule(self, date_str: str) -> None:
-        """Post the daily schedule of matches."""
+    async def _post_daily_schedule(
+        self, date_str: str, competition: Competition
+    ) -> None:
+        """Post the daily schedule of matches for one competition."""
         try:
-            matches = fetch_todays_matches()
+            matches = fetch_todays_matches(competition)
+            posted_key = _daily_posted_key(date_str, competition)
             if not matches:
-                espn_logger.info(f"No matches scheduled for {date_str}")
-                # Still mark as posted to avoid repeated API calls
-                self.daily_posted[date_str] = True
+                espn_logger.info(
+                    f"No {competition.id} matches scheduled for {date_str}"
+                )
+                self.daily_posted[posted_key] = True
                 save_data(self.daily_posted, DAILY_POSTED_FILE)
                 return
 
-            # Format schedule
             schedule_lines = []
             for match in sorted(matches, key=lambda m: m.get("date", "")):
                 kick_off = format_match_time_uk(match.get("date", ""))
@@ -207,54 +207,53 @@ class MatchNotificationService:
 
             description = "\n".join(schedule_lines)
 
-            # Read streams password and add to description
-            streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
-            password = self._get_streams_password()
-            if password:
-                description += (
-                    f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
-                )
+            # Streams + password block is EPL-specific.
+            if competition.id == EPL.id:
+                streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
+                password = self._get_streams_password()
+                if password:
+                    description += (
+                        f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
+                    )
 
-            # Format date nicely
             try:
                 dt = datetime.strptime(date_str, "%Y-%m-%d")
                 formatted_date = dt.strftime("%-d %b %Y")
             except Exception:
                 formatted_date = date_str
 
-            # Post to Discord
             success = await self._post_embed(
-                title=f"Premier League - {formatted_date}",
+                title=f"{competition.schedule_title} - {formatted_date}",
                 description=description,
-                color=PL_COLOR,
-                thumbnail_url=PL_LOGO,
+                color=competition.color,
+                thumbnail_url=competition.logo,
             )
 
             if success:
-                self.daily_posted[date_str] = True
+                self.daily_posted[posted_key] = True
                 save_data(self.daily_posted, DAILY_POSTED_FILE)
-                espn_logger.info(f"Posted daily schedule for {date_str}")
+                espn_logger.info(
+                    f"Posted {competition.id} daily schedule for {date_str}"
+                )
 
         except Exception as e:
             espn_logger.error(f"Error posting daily schedule: {e}")
 
     def _parse_match_time(self, date_str: Optional[str]) -> Optional[datetime]:
-        """Parse ESPN date string to datetime."""
         if not date_str:
             return None
         try:
-            # Handle both Z suffix and +00:00 format
             if date_str.endswith("Z"):
                 date_str = date_str[:-1] + "+00:00"
             return datetime.fromisoformat(date_str)
         except Exception:
             return None
 
-    async def _check_kickoffs_by_time(self, matches: List[Dict[str, Any]]) -> None:
+    async def _check_kickoffs_by_time(
+        self, matches: List[Dict[str, Any]], competition: Competition
+    ) -> None:
         """Check for kick-offs based on scheduled time and post batched by time slot."""
         now = datetime.now(timezone.utc)
-
-        # Group matches by scheduled time that should have kicked off
         time_slots: Dict[str, List[Dict[str, Any]]] = {}
 
         for match in matches:
@@ -266,48 +265,44 @@ class MatchNotificationService:
             if event_key in self.notified_events:
                 continue
 
-            # Get scheduled time
             scheduled_time = self._parse_match_time(match.get("date"))
             if not scheduled_time:
                 continue
 
-            # Check if kick-off time has passed but match hasn't ended
             status = match.get("status")
             if now >= scheduled_time and status != "STATUS_FULL_TIME":
-                # Use the scheduled time as the grouping key
                 time_key = scheduled_time.isoformat()
                 if time_key not in time_slots:
                     time_slots[time_key] = []
                 time_slots[time_key].append(match)
 
-        # Post one notification per time slot
-        for time_key, slot_matches in time_slots.items():
-            await self._notify_kickoffs_batched(slot_matches)
+        for _time_key, slot_matches in time_slots.items():
+            await self._notify_kickoffs_batched(slot_matches, competition)
 
-    async def _notify_kickoffs_batched(self, matches: List[Dict[str, Any]]) -> None:
-        """Send batched kick-off notification for matches at the same time."""
+    async def _notify_kickoffs_batched(
+        self, matches: List[Dict[str, Any]], competition: Competition
+    ) -> None:
         if not matches:
             return
 
-        # Build description with all matches
         match_names = [get_match_display_name(m) for m in matches]
         description = "\n".join(match_names)
 
-        # Add streams info
-        streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
-        password = self._get_streams_password()
-        if password:
-            description += (
-                f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
-            )
+        if competition.id == EPL.id:
+            streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
+            password = self._get_streams_password()
+            if password:
+                description += (
+                    f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
+                )
 
-        # Use singular or plural title
         title = "KICK-OFF" if len(matches) == 1 else "KICK-OFFS"
 
         success = await self._post_embed(
             title=title,
             description=description,
-            color=0x00FF00,  # Green for kick-off
+            color=0x00FF00,  # Keep green for kick-off across competitions
+            thumbnail_url=competition.logo,
         )
 
         if success:
@@ -316,10 +311,13 @@ class MatchNotificationService:
                 event_key = f"{match_id}_kickoff"
                 self.notified_events.add(event_key)
             save_data(list(self.notified_events), NOTIFIED_EVENTS_FILE)
-            espn_logger.info(f"Posted kick-offs: {', '.join(match_names)}")
+            espn_logger.info(
+                f"Posted {competition.id} kick-offs: {', '.join(match_names)}"
+            )
 
-    async def _check_for_fulltime(self, match: Dict[str, Any]) -> None:
-        """Check if match has ended and notify."""
+    async def _check_for_fulltime(
+        self, match: Dict[str, Any], competition: Competition
+    ) -> None:
         match_id = match.get("id")
         if not match_id:
             return
@@ -327,7 +325,6 @@ class MatchNotificationService:
         current_status = match.get("status")
         previous_status = self.match_states.get(match_id)
 
-        # Detect full-time
         if (
             current_status == "STATUS_FULL_TIME"
             and previous_status != "STATUS_FULL_TIME"
@@ -335,15 +332,15 @@ class MatchNotificationService:
             espn_logger.info(
                 f"Match {match_id} ended: {previous_status} -> {current_status}"
             )
-            await self._notify_final_score(match)
+            await self._notify_final_score(match, competition)
 
-        # Update state if changed
         if previous_status != current_status and current_status is not None:
             self.match_states[match_id] = current_status
             save_data(self.match_states, MATCH_STATE_FILE)
 
-    async def _notify_final_score(self, match: Dict[str, Any]) -> None:
-        """Send final score notification."""
+    async def _notify_final_score(
+        self, match: Dict[str, Any], competition: Competition
+    ) -> None:
         match_id = match.get("id")
         event_key = f"{match_id}_fulltime"
 
@@ -355,23 +352,29 @@ class MatchNotificationService:
         success = await self._post_embed(
             title="FULL TIME",
             description=score_display,
-            color=0x808080,  # Gray
+            color=0x808080,
+            thumbnail_url=competition.logo,
         )
 
         if success:
             self.notified_events.add(event_key)
             save_data(list(self.notified_events), NOTIFIED_EVENTS_FILE)
-            espn_logger.info(f"Posted full time: {score_display}")
+            espn_logger.info(f"Posted full time ({competition.id}): {score_display}")
 
-    async def _check_for_goals(self, match: Dict[str, Any]) -> None:
+    async def _check_for_goals(
+        self, match: Dict[str, Any], competition: Competition
+    ) -> None:
         """Check for new goals in a match and add to pending if not covered by Reddit."""
         match_id = match.get("id")
         if not match_id:
             return
 
-        # Only check for goals in live matches
         status = match.get("status")
-        if status not in ("STATUS_FIRST_HALF", "STATUS_SECOND_HALF", "STATUS_HALFTIME"):
+        if status not in (
+            "STATUS_FIRST_HALF",
+            "STATUS_SECOND_HALF",
+            "STATUS_HALFTIME",
+        ):
             return
 
         home_team = match.get("home_team", {})
@@ -381,33 +384,26 @@ class MatchNotificationService:
         home_score = home_team.get("score", "0")
         away_score = away_team.get("score", "0")
 
-        # Get goals from match data
         goals = match.get("goals", [])
         if not goals:
             return
 
-        # Initialize known goals for this match if needed
         if match_id not in self.known_goals:
             self.known_goals[match_id] = []
 
         for goal in goals:
             try:
-                goal_key = self._generate_goal_key(match, goal)
+                goal_key = self._generate_goal_key(match, goal, competition)
                 if not goal_key:
                     continue
 
-                # Skip if we already know about this goal
                 if goal_key in self.known_goals[match_id]:
                     continue
 
-                # New goal detected!
                 espn_logger.info(f"New goal detected: {goal_key}")
-
-                # Add to known goals
                 self.known_goals[match_id].append(goal_key)
                 save_data(self.known_goals, KNOWN_GOALS_FILE)
 
-                # Check if Reddit already posted this goal
                 posted_scores = load_data(POSTED_SCORES_FILE, {})
                 if self._reddit_posted_goal(goal_key, {}, posted_scores):
                     espn_logger.info(
@@ -415,10 +411,10 @@ class MatchNotificationService:
                     )
                     continue
 
-                # Add to pending goals (wait for Reddit)
                 self.pending_goals[goal_key] = {
                     "detected_at": datetime.now(timezone.utc).isoformat(),
                     "match_id": match_id,
+                    "competition_id": competition.id,
                     "home_team": home_name,
                     "away_team": away_name,
                     "home_score": home_score,
@@ -434,12 +430,15 @@ class MatchNotificationService:
                 espn_logger.error(f"Error processing goal: {e}")
 
     def _generate_goal_key(
-        self, match: Dict[str, Any], goal: Dict[str, Any]
+        self,
+        match: Dict[str, Any],
+        goal: Dict[str, Any],
+        competition: Competition,
     ) -> Optional[str]:
-        """Generate a canonical key for a goal event.
+        """Format: {competition_id}:{team_a}_vs_{team_b}_{scorer}_{minute}.
 
-        Format: {team1}_vs_{team2}_{scorer}_{minute}
-        Uses scorer name instead of score to avoid re-detection when match score changes.
+        Mirrors the canonical-key prefix used by Reddit-side dedup so
+        _reddit_posted_goal can match across both sources.
         """
         try:
             home_team = match.get("home_team", {})
@@ -447,22 +446,19 @@ class MatchNotificationService:
             home_name = normalize_team_name(home_team.get("name", ""))
             away_name = normalize_team_name(away_team.get("name", ""))
             scorer = normalize_player_name(goal.get("scorer", ""))
-            minute = goal.get("minute", "").split("+")[0]  # Base minute only
+            minute = goal.get("minute", "").split("+")[0]
 
             if not home_name or not away_name or not minute or not scorer:
                 return None
 
-            # Sort teams alphabetically for consistency
             teams_key = "_vs_".join(sorted([home_name, away_name]))
-
-            return f"{teams_key}_{scorer}_{minute}"
+            return f"{competition.id}:{teams_key}_{scorer}_{minute}"
 
         except Exception as e:
             espn_logger.error(f"Error generating goal key: {e}")
             return None
 
     async def _process_pending_goals(self) -> None:
-        """Process pending goals and post fallback if Reddit didn't cover them."""
         if not self.pending_goals:
             return
 
@@ -475,17 +471,14 @@ class MatchNotificationService:
                 detected_at = datetime.fromisoformat(goal_data["detected_at"])
                 elapsed = (now - detected_at).total_seconds()
 
-                # Check if Reddit has posted this goal
                 if self._reddit_posted_goal(goal_key, goal_data, posted_scores):
                     espn_logger.info(f"Reddit covered goal: {goal_key}")
                     goals_to_remove.append(goal_key)
                     continue
 
-                # Wait for fallback window
                 if elapsed < GOAL_FALLBACK_SECONDS:
                     continue
 
-                # Reddit didn't post within window - post ESPN fallback
                 espn_logger.info(
                     f"Reddit didn't cover goal after {GOAL_FALLBACK_SECONDS}s, posting fallback: {goal_key}"
                 )
@@ -494,10 +487,8 @@ class MatchNotificationService:
 
             except Exception as e:
                 espn_logger.error(f"Error processing pending goal {goal_key}: {e}")
-                # Remove problematic entries to avoid infinite loops
                 goals_to_remove.append(goal_key)
 
-        # Clean up processed goals
         for key in goals_to_remove:
             if key in self.pending_goals:
                 del self.pending_goals[key]
@@ -508,29 +499,25 @@ class MatchNotificationService:
     def _reddit_posted_goal(
         self, goal_key: str, goal_data: Dict[str, Any], posted_scores: Dict[str, Dict]
     ) -> bool:
-        """Check if Reddit has posted a matching goal.
+        """Check if Reddit posted a matching goal.
 
-        Matches by teams + minute with tolerance. Score matching is flexible since
-        Reddit stores score-at-time-of-goal while we may detect goals later.
+        Both ESPN and Reddit keys carry the same {competition_id}: prefix, so
+        comparing parts[0] verbatim implicitly also requires same competition.
         """
         if not posted_scores:
             return False
 
-        # Parse the ESPN goal key (format: teams_key_scorer_minute)
         parts = goal_key.rsplit("_", 2)
         if len(parts) != 3:
             return False
 
-        teams_key, _, minute = (
-            parts  # scorer is in the middle, we don't need it for matching
-        )
+        teams_key, _, minute = parts
 
         try:
             goal_minute = int(minute)
         except ValueError:
             return False
 
-        # Check for matching Reddit posts with minute tolerance
         for reddit_key in posted_scores.keys():
             reddit_parts = reddit_key.rsplit("_", 2)
             if len(reddit_parts) != 3:
@@ -538,11 +525,9 @@ class MatchNotificationService:
 
             reddit_teams, _, reddit_minute = reddit_parts
 
-            # Check teams match
             if reddit_teams != teams_key:
                 continue
 
-            # Check minute within tolerance (±2 minutes)
             try:
                 reddit_min = int(reddit_minute)
                 if abs(reddit_min - goal_minute) <= 2:
@@ -556,7 +541,8 @@ class MatchNotificationService:
         return False
 
     async def _post_goal_fallback(self, goal_data: Dict[str, Any]) -> None:
-        """Post ESPN goal fallback notification."""
+        from src.config.competitions import get_competition
+
         home_team = goal_data.get("home_team", "Unknown")
         away_team = goal_data.get("away_team", "Unknown")
         home_score = goal_data.get("home_score", "0")
@@ -564,21 +550,24 @@ class MatchNotificationService:
         scorer = goal_data.get("scorer", "Unknown")
         minute = goal_data.get("minute", "")
         scoring_team = goal_data.get("scoring_team", "")
+        comp_id = goal_data.get("competition_id", EPL.id)
 
-        # Get team branding for scoring team
-        team_data = map_espn_team_to_config(scoring_team)
+        try:
+            competition = get_competition(comp_id)
+        except KeyError:
+            competition = EPL
 
-        # Format description
+        team_data = map_espn_team_to_config(scoring_team, competition)
+
         score_line = f"{home_team} {home_score} - {away_score} {away_team}"
         scorer_line = f"{scorer} {minute}'" if minute else scorer
         description = f"{score_line}\n{scorer_line}"
 
-        # Get team color and logo
-        color = 0x00FF00  # Green for goal
-        thumbnail_url = None
+        color = 0x00FF00
+        thumbnail_url = competition.logo
         if team_data and "data" in team_data:
             color = team_data["data"].get("color", color)
-            thumbnail_url = team_data["data"].get("logo")
+            thumbnail_url = team_data["data"].get("logo", thumbnail_url)
 
         await self._post_embed(
             title="GOAL!",
@@ -587,13 +576,12 @@ class MatchNotificationService:
             thumbnail_url=thumbnail_url,
         )
 
-        # Track this goal as covered by ESPN so Reddit won't post duplicate
         home_norm = normalize_team_name(home_team)
         away_norm = normalize_team_name(away_team)
         teams_key = "_vs_".join(sorted([home_norm, away_norm]))
         base_minute = minute.split("+")[0] if minute else ""
         if teams_key and base_minute:
-            covered_key = f"{teams_key}_{base_minute}"
+            covered_key = f"{competition.id}:{teams_key}_{base_minute}"
             covered_goals = load_data(ESPN_COVERED_GOALS_FILE, {})
             covered_goals[covered_key] = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -610,17 +598,6 @@ class MatchNotificationService:
         color: int = 0x808080,
         thumbnail_url: Optional[str] = None,
     ) -> bool:
-        """Post an embed to Discord webhook.
-
-        Args:
-            title: Embed title
-            description: Embed description
-            color: Embed color (hex int)
-            thumbnail_url: Optional thumbnail image URL
-
-        Returns:
-            True if successful, False otherwise
-        """
         if not DISCORD_WEBHOOK_URL:
             webhook_logger.error("Discord webhook URL not configured")
             return False
@@ -667,19 +644,17 @@ class MatchNotificationService:
             return False
 
     def cleanup_old_states(self, days: int = 7) -> None:
-        """Clean up old match states and notified events.
-
-        Args:
-            days: Remove states older than this many days
-        """
-        # For now, just clear old daily_posted entries
         today = get_today_uk_date_str()
-        old_keys = [k for k in self.daily_posted.keys() if k < today]
+        old_keys = [
+            k for k in self.daily_posted.keys() if k.split(":", 1)[0] < today
+        ]
         for key in old_keys:
             del self.daily_posted[key]
         if old_keys:
             save_data(self.daily_posted, DAILY_POSTED_FILE)
-            espn_logger.debug(f"Cleaned up {len(old_keys)} old daily_posted entries")
+            espn_logger.debug(
+                f"Cleaned up {len(old_keys)} old daily_posted entries"
+            )
 
 
 # Global service instance

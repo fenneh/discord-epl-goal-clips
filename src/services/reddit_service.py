@@ -6,7 +6,8 @@ from typing import Optional, Dict, Any, List, overload, Literal, Union
 import asyncpraw
 
 from src.config import CLIENT_ID, CLIENT_SECRET, USER_AGENT
-from src.config.teams import premier_league_teams
+from src.config.competitions import Competition, list_competitions
+from src.config.teams import get_teams_for_competition
 from src.services.video_service import video_extractor
 from src.utils.logger import app_logger
 from src.utils.url_utils import get_base_domain, get_domain_info
@@ -45,17 +46,39 @@ def find_team_in_title(
 
 
 def find_team_in_title(
-    title: str, include_metadata: bool = False
+    title: str,
+    include_metadata: bool = False,
+    competitions: Optional[List[Competition]] = None,
 ) -> Optional[Dict[str, Any] | str]:
-    """Find Premier League team in post title.
+    """Find a tracked team in the post title, searching across competitions.
 
-    Args:
-        title (str): Post title to search
-        include_metadata (bool): If True, return team data dictionary, otherwise just team name
-
-    Returns:
-        Team name/data if found, None otherwise
+    When include_metadata=True, the returned dict carries a `competition` key
+    so callers know which pipeline (EPL, World Cup, etc.) the match came
+    from. Competitions are searched in the order returned by
+    list_competitions(); the first match wins.
     """
+    if not title:
+        return None
+
+    if competitions is None:
+        competitions = list_competitions()
+
+    for competition in competitions:
+        teams_dict = get_teams_for_competition(competition.id)
+        result = _find_team_in_dict(title, teams_dict, include_metadata)
+        if result is None:
+            continue
+        if include_metadata and isinstance(result, dict):
+            result["competition"] = competition
+        return result
+    return None
+
+
+def _find_team_in_dict(
+    title: str, premier_league_teams: dict, include_metadata: bool = False
+) -> Optional[Dict[str, Any] | str]:
+    """Single-competition team match. The `premier_league_teams` name is
+    preserved purely to keep the original implementation below intact."""
     if not title:
         return None
 

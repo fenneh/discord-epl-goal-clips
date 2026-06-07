@@ -5,36 +5,30 @@ from typing import Dict, Optional, Any
 
 import pytz
 
-from src.config.teams import premier_league_teams
+from src.config.competitions import Competition, EPL
+from src.config.teams import get_teams_for_competition
 from src.utils.score_utils import normalize_team_name
 
 UK_TZ = pytz.timezone("Europe/London")
 
-# Premier League brand color (purple)
+# Premier League brand color (purple) — kept for any legacy reference.
 PL_COLOR = 0x37003C
 
 
-def map_espn_team_to_config(espn_team_name: str) -> Optional[Dict[str, Any]]:
-    """Map ESPN team name to existing team config for colors/logos.
-
-    Args:
-        espn_team_name: Team name from ESPN API
-
-    Returns:
-        Team data dict compatible with post_to_discord, or None if not found
-    """
+def map_espn_team_to_config(
+    espn_team_name: str, competition: Competition = EPL
+) -> Optional[Dict[str, Any]]:
+    """Map an ESPN team name to the competition's team config for colours/logos."""
     if not espn_team_name:
         return None
 
-    # Normalize ESPN name using the same logic as Reddit matching
     espn_normalized = normalize_team_name(espn_team_name)
+    teams_dict = get_teams_for_competition(competition.id)
 
-    for team_key, team_data in premier_league_teams.items():
-        # Check if normalized ESPN name matches normalized team key
+    for team_key, team_data in teams_dict.items():
         if normalize_team_name(team_key) == espn_normalized:
             return {"name": team_key, "data": team_data, "is_scoring": None}
 
-        # Check aliases
         aliases = team_data.get("aliases", [])
         if isinstance(aliases, list):
             for alias in aliases:

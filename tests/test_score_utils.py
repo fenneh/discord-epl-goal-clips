@@ -8,6 +8,7 @@ from src.utils.score_utils import (
     is_duplicate_score,
     extract_goal_info,
     normalize_player_name,
+    normalize_team_name,
     generate_canonical_key,
 )
 
@@ -249,3 +250,21 @@ class TestEspnRedditGoalKeyMatching:
 
         teams_match = espn_parts[0] == reddit_parts[0]
         assert teams_match == should_match_teams
+
+
+@pytest.mark.parametrize(
+    "input_name,expected",
+    [
+        ("Nottingham Forest", "nottingham forest"),
+        ("Nottingham", "nottingham forest"),
+        ("Forest", "nottingham forest"),
+        ("NFFC", "nottingham forest"),
+        ("Nott'm Forest", "nottingham forest"),
+    ],
+)
+def test_nottingham_forest_normalization(input_name: str, expected: str):
+    """Reddit titles often shorten 'Nottingham Forest' to just 'Nottingham'.
+
+    All variants must collapse to the same key so ESPN/Reddit dedup matches.
+    """
+    assert normalize_team_name(input_name) == expected

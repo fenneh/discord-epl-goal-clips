@@ -1,61 +1,56 @@
-"""ESPN API service for fetching Premier League match data."""
+"""ESPN API service for fetching match data, per competition."""
 
 from datetime import date
 from typing import List, Dict, Any, Optional
 
 from espn_sports_api import Soccer
 
+from src.config.competitions import Competition, EPL
 from src.utils.logger import setup_logger
 from src.utils.match_utils import get_current_uk_time
 
 espn_logger = setup_logger("espn_service", "espn.log")
 
-epl = Soccer(league="epl")
+_clients: Dict[str, Soccer] = {}
 
 
-def fetch_matches_for_date(target_date: date) -> List[Dict[str, Any]]:
-    """Fetch all Premier League matches for a specific date.
+def _client_for(competition: Competition) -> Soccer:
+    if competition.id not in _clients:
+        _clients[competition.id] = Soccer(league=competition.espn_league)
+    return _clients[competition.id]
 
-    Args:
-        target_date: The date to fetch matches for
 
-    Returns:
-        List of match dictionaries with standardized format
-    """
+def fetch_matches_for_date(
+    target_date: date, competition: Competition = EPL
+) -> List[Dict[str, Any]]:
+    """Fetch matches for a specific date in the given competition."""
     try:
-        data = epl.on_date(target_date)
-        matches = _parse_events(data.get("events", []))
-        espn_logger.debug(f"Fetched {len(matches)} matches for {target_date}")
+        data = _client_for(competition).on_date(target_date)
+        matches = _parse_events(data.get("events", []), competition)
+        espn_logger.debug(
+            f"Fetched {len(matches)} {competition.id} matches for {target_date}"
+        )
         return matches
     except Exception as e:
-        espn_logger.error(f"ESPN API request failed: {e}")
+        espn_logger.error(f"ESPN API request failed ({competition.id}): {e}")
         return []
 
 
-def fetch_todays_matches() -> List[Dict[str, Any]]:
-    """Fetch all Premier League matches for today (UK timezone).
-
-    Returns:
-        List of match dictionaries with standardized format
-    """
+def fetch_todays_matches(competition: Competition = EPL) -> List[Dict[str, Any]]:
+    """Fetch matches in the given competition for today (UK timezone)."""
     today_uk = get_current_uk_time().date()
-    return fetch_matches_for_date(today_uk)
+    return fetch_matches_for_date(today_uk, competition)
 
 
-def _parse_events(events: List[Dict]) -> List[Dict[str, Any]]:
-    """Parse ESPN events into standardized match format.
-
-    Args:
-        events: Raw events array from ESPN API
-
-    Returns:
-        List of standardized match dictionaries
-    """
+def _parse_events(
+    events: List[Dict], competition: Competition
+) -> List[Dict[str, Any]]:
     matches = []
     for event in events:
         try:
             match = _parse_single_event(event)
             if match:
+                match["competition_id"] = competition.id
                 matches.append(match)
         except Exception as e:
             espn_logger.error(f"Error parsing event {event.get('id', 'unknown')}: {e}")
@@ -63,14 +58,6 @@ def _parse_events(events: List[Dict]) -> List[Dict[str, Any]]:
 
 
 def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
-    """Parse a single ESPN event into standardized format.
-
-    Args:
-        event: Single event from ESPN API
-
-    Returns:
-        Standardized match dictionary or None if parsing fails
-    """
     status_info = event.get("status", {}).get("type", {})
 
     match = {
@@ -113,14 +100,6 @@ def _parse_single_event(event: Dict) -> Optional[Dict[str, Any]]:
 
 
 def _parse_goal_events(details: List[Dict]) -> List[Dict[str, Any]]:
-    """Parse goal events from ESPN details array.
-
-    Args:
-        details: Details array from ESPN competition
-
-    Returns:
-        List of goal event dictionaries
-    """
     goals = []
     for detail in details:
         try:
@@ -159,14 +138,6 @@ def _parse_goal_events(details: List[Dict]) -> List[Dict[str, Any]]:
 
 
 def get_match_display_name(match: Dict[str, Any]) -> str:
-    """Get a display-friendly match name.
-
-    Args:
-        match: Standardized match dictionary
-
-    Returns:
-        Formatted match name string
-    """
     home = match.get("home_team", {})
     away = match.get("away_team", {})
     home_name = home.get("name", "Unknown") if home else "Unknown"
@@ -175,14 +146,6 @@ def get_match_display_name(match: Dict[str, Any]) -> str:
 
 
 def get_match_score_display(match: Dict[str, Any]) -> str:
-    """Get a display-friendly score string.
-
-    Args:
-        match: Standardized match dictionary
-
-    Returns:
-        Formatted score string (e.g., "Arsenal 2 - 1 Chelsea")
-    """
     home = match.get("home_team", {})
     away = match.get("away_team", {})
     home_name = home.get("name", "Unknown") if home else "Unknown"

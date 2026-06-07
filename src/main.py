@@ -12,6 +12,7 @@ import asyncpraw.exceptions
 from fastapi import FastAPI, BackgroundTasks
 
 from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES, DATA_DIR
+from src.config.competitions import EPL
 from src.services.discord_service import post_to_discord, post_mp4_link
 from src.services.reddit_service import (
     create_reddit_client,
@@ -25,6 +26,7 @@ from src.utils.score_utils import (
     cleanup_old_scores,
     extract_goal_info,
     generate_canonical_key,
+    migrate_legacy_scores,
 )
 from src.utils.url_utils import get_domain_info
 from src.services.match_notification_service import match_notification_service
@@ -34,15 +36,8 @@ import os
 ESPN_COVERED_GOALS_FILE = os.path.join(DATA_DIR, "espn_covered_goals.pkl")
 
 
-def check_espn_covered_goal(goal_info: dict) -> bool:
-    """Check if ESPN already posted a notification for this goal.
-
-    Args:
-        goal_info: Goal info dict with team1, team2, minute fields
-
-    Returns:
-        True if ESPN already covered this goal, False otherwise
-    """
+def check_espn_covered_goal(goal_info: dict, competition_id: str = EPL.id) -> bool:
+    """Check if ESPN already posted a notification for this goal in this competition."""
     if not goal_info:
         return False
 
@@ -57,7 +52,7 @@ def check_espn_covered_goal(goal_info: dict) -> bool:
     if not team1 or not team2 or not minute:
         return False
 
-    teams_key = "_vs_".join(sorted([team1, team2]))
+    teams_key = f"{competition_id}:" + "_vs_".join(sorted([team1, team2]))
 
     try:
         goal_minute = int(minute)
@@ -104,6 +99,8 @@ app = FastAPI(lifespan=lifespan)
 # Load previously posted URLs and scores
 posted_urls: Set[str] = load_data(POSTED_URLS_FILE, set())
 posted_scores: Dict[str, Dict[str, str]] = load_data(POSTED_SCORES_FILE, dict())
+if migrate_legacy_scores(posted_scores):
+    save_data(posted_scores, POSTED_SCORES_FILE)
 
 
 def contains_goal_keyword(title: str) -> bool:
@@ -246,11 +243,14 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             )
             return False
 
-        # Check if title contains a Premier League team
+        # Check if title contains a tracked team in any competition
         team_data = find_team_in_title(title, include_metadata=True)
         if not team_data:
-            app_logger.info(f"[SKIP] No Premier League team found: {title}")
+            app_logger.info(f"[SKIP] No tracked team found: {title}")
             return False
+
+        competition = team_data.get("competition", EPL)
+        competition_id = competition.id
 
         # Skip if we've already processed this URL
         if url in posted_urls and not ignore_duplicates:
@@ -297,7 +297,7 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             )
             canonical_key = None  # Ensure key is None
         else:
-            canonical_key = generate_canonical_key(current_info)
+            canonical_key = generate_canonical_key(current_info, competition_id)
             if not canonical_key:
                 app_logger.warning(
                     f"[PROCESS-WARN] Could not generate canonical key for: {title}. Proceeding with caution."
@@ -306,8 +306,8 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
             elif not ignore_duplicates:
                 # Check if this is a duplicate score using the canonical key
                 if is_duplicate_score(
-                    title, posted_scores, current_time, url
-                ):  # is_duplicate_score now uses the key internally
+                    title, posted_scores, current_time, url, competition_id
+                ):
                     app_logger.info(
                         "[SKIP] Duplicate score detected based on canonical key."
                     )
@@ -335,7 +335,7 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         original_url = submission.url
 
         # Check if ESPN already covered this goal - if so, only post MP4
-        if current_info and check_espn_covered_goal(current_info):
+        if current_info and check_espn_covered_goal(current_info, competition_id):
             app_logger.info(
                 "[ESPN COVERED] Goal already announced by ESPN, posting MP4 only"
             )

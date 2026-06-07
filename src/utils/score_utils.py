@@ -87,11 +87,65 @@ def normalize_team_name(team_name: str) -> str:
         "burnley": ["clarets", "bfc"],
         "leeds united": ["leeds", "leeds utd", "whites", "lufc"],
         "sunderland": ["black cats", "safc"],
-        "nottingham forest": ["forest", "nffc", "nott'm forest", "nottm forest"],
+        "nottingham forest": [
+            "forest",
+            "nffc",
+            "nott'm forest",
+            "nottm forest",
+            "nottingham",
+        ],
         "bournemouth": ["afc bournemouth", "cherries"],
         "brentford": ["bees"],
         "fulham": ["cottagers", "ffc"],
         "everton": ["toffees", "efc"],
+        # National teams — collapse common variants to ESPN's canonical name.
+        "united states": ["usa", "u.s.a.", "u.s.", "us", "usmnt", "america"],
+        "south korea": ["korea republic", "s. korea", "s korea", "korea"],
+        "netherlands": [
+            "holland",
+            "the netherlands",
+            "dutch",
+            "oranje",
+            "nederland",
+        ],
+        "ivory coast": ["cote divoire", "cote d'ivoire", "côte d'ivoire", "civ"],
+        "czechia": ["czech republic", "cesko", "česko"],
+        "republic of ireland": ["ireland", "eire", "éire"],
+        "united arab emirates": ["uae", "u.a.e."],
+        "dr congo": [
+            "democratic republic of the congo",
+            "congo dr",
+            "dr-congo",
+            "drc",
+        ],
+        "iran": ["ir iran", "persia"],
+        "turkey": ["türkiye", "turkiye"],
+        "cape verde": ["cabo verde"],
+        # Native-language nation names that appear in Reddit titles.
+        "brazil": ["brasil"],
+        "spain": ["españa", "espana"],
+        "germany": ["deutschland"],
+        "italy": ["italia"],
+        "poland": ["polska"],
+        "croatia": ["hrvatska"],
+        "norway": ["norge"],
+        "sweden": ["sverige"],
+        "denmark": ["danmark"],
+        "hungary": ["magyarorszag", "magyarország"],
+        "mexico": ["méxico"],
+        "ukraine": ["ukraina", "ukraïna", "україна"],
+        "belgium": ["belgië", "belgie", "belgique", "belgien"],
+        "switzerland": ["schweiz", "suisse", "svizzera"],
+        "austria": ["österreich", "oesterreich"],
+        "japan": ["nippon"],
+        "wales": ["cymru"],
+        "haiti": ["haïti"],
+        "curaçao": ["curacao"],
+        "bosnia-herzegovina": [
+            "bosnia and herzegovina",
+            "bosnia",
+            "bih",
+        ],
     }
 
     # Try to match team name with known variations first
@@ -210,8 +264,15 @@ def extract_minutes(minute_str: str) -> int:
     return int(minute_str)
 
 
-def generate_canonical_key(goal_info: Dict[str, Optional[str]]) -> Optional[str]:
-    """Generates a consistent key for a goal event."""
+def generate_canonical_key(
+    goal_info: Dict[str, Optional[str]], competition_id: Optional[str] = None
+) -> Optional[str]:
+    """Generates a consistent key for a goal event.
+
+    Competition id is prefixed with ':' so keys for the same fixture across
+    EPL and other competitions can't collide. Legacy unprefixed keys are
+    treated as EPL by migrate_legacy_scores().
+    """
     team1 = goal_info.get("team1")
     team2 = goal_info.get("team2")
     score = goal_info.get("score")
@@ -219,15 +280,28 @@ def generate_canonical_key(goal_info: Dict[str, Optional[str]]) -> Optional[str]
     if not goal_info or not team1 or not team2 or not score or not minute:
         app_logger.debug(f"Cannot generate canonical key, missing info: {goal_info}")
         return None
-    # Sort team names alphabetically to handle "TeamA vs TeamB" and "TeamB vs TeamA" the same
     teams_key = "_vs_".join(sorted([team1, team2]))
-    # Use base minute to handle minor variations in injury time reporting
     base_minute = minute.split("+")[0]
-    # Normalize score by removing spaces and brackets
     score_key = re.sub(r"[\[\]\s]", "", score)
-    key = f"{teams_key}_{score_key}_{base_minute}"
+    body = f"{teams_key}_{score_key}_{base_minute}"
+    key = f"{competition_id}:{body}" if competition_id else body
     app_logger.debug(f"Generated canonical key: {key}")
     return key
+
+
+def migrate_legacy_scores(posted_scores: Dict[str, Dict[str, str]]) -> bool:
+    """Add 'epl:' prefix to any unprefixed keys (one-shot, idempotent).
+
+    The bot ran EPL-only before competition support, so any key without a
+    ':' prefix is an EPL key. Returns True if any keys were migrated.
+    """
+    legacy_keys = [k for k in posted_scores if ":" not in k]
+    if not legacy_keys:
+        return False
+    for key in legacy_keys:
+        posted_scores[f"epl:{key}"] = posted_scores.pop(key)
+    app_logger.info(f"Migrated {len(legacy_keys)} legacy EPL score keys to prefixed form")
+    return True
 
 
 def is_duplicate_score(
@@ -235,6 +309,7 @@ def is_duplicate_score(
     posted_scores: Dict[str, Dict[str, str]],
     timestamp: datetime,
     url: Optional[str] = None,
+    competition_id: Optional[str] = None,
 ) -> bool:
     """Check if this goal has already been posted using a canonical key."""
     # Set a time window for considering duplicates (e.g., 30 minutes)
@@ -248,7 +323,7 @@ def is_duplicate_score(
             )
             return False  # Cannot determine if duplicate if info extraction fails
 
-        canonical_key = generate_canonical_key(current_info)
+        canonical_key = generate_canonical_key(current_info, competition_id)
         if not canonical_key:
             app_logger.warning(
                 f"Could not generate canonical key for duplicate check: {title}"

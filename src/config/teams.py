@@ -1,4 +1,9 @@
-"""Premier League teams configuration."""
+"""Team configuration. Per-competition team dicts are routed via
+get_teams_for_competition(); legacy `premier_league_teams` is preserved
+for code that still imports it directly."""
+
+from src.config.competitions import EPL, WORLD_CUP_2026
+from src.config.national_teams import national_teams
 
 # Premier League teams and their aliases
 premier_league_teams = {
@@ -112,7 +117,7 @@ premier_league_teams = {
     },
     "Nottingham Forest": {
         "name": "Nottingham Forest",
-        "aliases": ["Nottingham Forest", "Forest", "NFFC", "Nott'm Forest"],
+        "aliases": ["Nottingham Forest", "Nottingham", "Forest", "NFFC", "Nott'm Forest"],
         "color": 0xDD0000,  # Red
         "logo": "https://resources.premierleague.com/premierleague/badges/t17.png",
     },
@@ -141,3 +146,13 @@ premier_league_teams = {
         "logo": "https://resources.premierleague.com/premierleague/badges/t39.png",
     },
 }
+
+
+_TEAMS_BY_COMPETITION = {
+    EPL.id: premier_league_teams,
+    WORLD_CUP_2026.id: national_teams,
+}
+
+
+def get_teams_for_competition(comp_id: str) -> dict:
+    return _TEAMS_BY_COMPETITION[comp_id]
