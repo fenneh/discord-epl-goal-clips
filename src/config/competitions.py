@@ -28,7 +28,7 @@ WORLD_CUP_2026 = Competition(
     name="FIFA World Cup 2026",
     espn_league="world_cup",
     color=0xE53935,
-    logo="https://a.espncdn.com/i/leaguelogos/soccer/500/9.png",
+    logo="https://a.espncdn.com/i/leaguelogos/soccer/500/4.png",
     schedule_title="World Cup",
 )
 
