@@ -207,14 +207,12 @@ class MatchNotificationService:
 
             description = "\n".join(schedule_lines)
 
-            # Streams + password block is EPL-specific.
-            if competition.id == EPL.id:
-                streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
-                password = self._get_streams_password()
-                if password:
-                    description += (
-                        f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
-                    )
+            streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
+            password = self._get_streams_password()
+            if password:
+                description += (
+                    f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
+                )
 
             try:
                 dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -288,13 +286,12 @@ class MatchNotificationService:
         match_names = [get_match_display_name(m) for m in matches]
         description = "\n".join(match_names)
 
-        if competition.id == EPL.id:
-            streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
-            password = self._get_streams_password()
-            if password:
-                description += (
-                    f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
-                )
+        streams_url = STREAMS_URL or "https://sports.imperium-eu.com"
+        password = self._get_streams_password()
+        if password:
+            description += (
+                f"\n\n**Watch Live:** {streams_url}\n**Password:** `{password}`"
+            )
 
         title = "KICK-OFF" if len(matches) == 1 else "KICK-OFFS"
 
