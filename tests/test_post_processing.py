@@ -26,10 +26,14 @@ class MockSubmission:
         ("GOAL! Arsenal 1-0 Chelsea", True),
         ("⚽ Arsenal 1-0 Chelsea", True),
         ("Great Goal! Arsenal 1-0 Chelsea", True),
+        # Bracket-less scoreline with minute marker (World Cup style)
+        ("Mexico 1-0 South Africa - Julián Quiñones 9'", True),
+        ("Mexico 2 - 1 South Africa - Raul Jimenez 90+2'", True),
         # Non-goal posts
         ("Match Thread: Arsenal vs Chelsea", False),
         ("Post Match Thread: Arsenal 1-0 Chelsea", False),
         ("Half Time: Arsenal 0-0 Chelsea", False),
+        ("Mexico 2 - 1 South Africa", False),
     ],
 )
 def test_goal_keyword_detection(title: str, should_match: bool):

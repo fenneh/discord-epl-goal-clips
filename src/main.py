@@ -126,6 +126,11 @@ def contains_goal_keyword(title: str) -> bool:
         if re.search(pattern, title):
             return True
 
+    # Bracket-less scoreline with a minute marker, e.g. "Mexico 1-0 South Africa - Quinones 9'".
+    # Common in World Cup posts that skip the r/soccer [n] convention.
+    if re.search(r"\d+\s*-\s*\d+", title) and re.search(r"\d+(?:\+\d+)?\s*'", title):
+        return True
+
     # Check for goal keywords and emojis
     goal_indicators = {
         "goal",
