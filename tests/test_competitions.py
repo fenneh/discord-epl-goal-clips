@@ -1,7 +1,6 @@
 """Tests for the competition registry, multi-competition team lookup and
 competition-prefixed canonical keys."""
 
-import pytest
 
 from src.config.competitions import (
     EPL,

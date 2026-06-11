@@ -1,6 +1,5 @@
 """Tests for ESPN service parsing functions."""
 
-import pytest
 
 from src.services.espn_service import (
     _parse_goal_events,
