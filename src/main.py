@@ -11,7 +11,13 @@ import asyncpraw
 import asyncpraw.exceptions
 from fastapi import FastAPI, BackgroundTasks
 
-from src.config import POSTED_URLS_FILE, POSTED_SCORES_FILE, POST_AGE_MINUTES, DATA_DIR
+from src.config import (
+    POSTED_URLS_FILE,
+    POSTED_SCORES_FILE,
+    POST_AGE_MINUTES,
+    POST_DELAY_SECONDS,
+    DATA_DIR,
+)
 from src.config.competitions import EPL
 from src.services.discord_service import post_to_discord, post_mp4_link
 from src.services.reddit_service import (
@@ -339,6 +345,25 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
 
         original_url = submission.url
 
+        # Pre-mark in posted_scores so the ESPN fallback won't duplicate this
+        # goal while we're waiting out POST_DELAY_SECONDS.
+        score_key = canonical_key or title
+        posted_scores[score_key] = {
+            "timestamp": current_time.isoformat(),
+            "url": original_url,
+            "reddit_url": reddit_url,
+            "original_title": title,
+        }
+        save_data(posted_scores, POSTED_SCORES_FILE)
+        if canonical_key:
+            app_logger.info(f"Stored score with key '{canonical_key}'")
+        else:
+            app_logger.warning("Stored score using original title (no canonical key)")
+
+        if POST_DELAY_SECONDS > 0:
+            app_logger.info(f"Delaying Discord post by {POST_DELAY_SECONDS}s")
+            await asyncio.sleep(POST_DELAY_SECONDS)
+
         # Check if ESPN already covered this goal - if so, only post MP4
         if current_info and check_espn_covered_goal(current_info, competition_id):
             app_logger.info(
@@ -359,30 +384,6 @@ async def process_submission(submission, ignore_duplicates: bool = False) -> boo
         content = f"{title}\n{original_url}\n{reddit_url}"
         app_logger.info(f"Posting initial content:\n{content}")
         await post_to_discord(content, team_data)
-
-        # Store score with Reddit post URL and video URL, using canonical key if available
-        if canonical_key:
-            posted_scores[canonical_key] = {
-                "timestamp": current_time.isoformat(),
-                "url": original_url,
-                "reddit_url": reddit_url,
-                "original_title": title,
-            }
-            app_logger.info(
-                f"Stored score with key '{canonical_key}' - Original: {original_url}, Reddit: {reddit_url}"
-            )
-        else:
-            posted_scores[title] = {
-                "timestamp": current_time.isoformat(),
-                "url": original_url,
-                "reddit_url": reddit_url,
-                "original_title": title,
-            }
-            app_logger.warning(
-                f"Stored score using original title as key (no canonical key) - Original: {original_url}, Reddit: {reddit_url}"
-            )
-
-        save_data(posted_scores, POSTED_SCORES_FILE)
 
         # Try to extract MP4 link with retries
         mp4_url = await extract_mp4_with_retries(submission)

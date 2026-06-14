@@ -27,6 +27,11 @@ STREAMS_PASSWORD_FILE = "/app/streams/password.txt"
 # Post age cutoff in minutes (default 5 minutes)
 POST_AGE_MINUTES = int(os.getenv("POST_AGE_MINUTES", "5"))
 
+# Optional delay (seconds) before posting goal notifications, so stream viewers
+# aren't spoiled by the bot. Applies to Reddit goal posts and ESPN fallback
+# goals. Default 0 (no delay).
+POST_DELAY_SECONDS = int(os.getenv("POST_DELAY_SECONDS", "0"))
+
 # Allowed domains for goal clips (REMOVED - Logic uses base_domains from filters.py)
 # ALLOWED_DOMAINS = [
 #     'streamff.com',

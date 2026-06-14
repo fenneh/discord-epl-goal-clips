@@ -2,6 +2,7 @@
 and goal-fallback posts. Iterates configured competitions; per-fixture state is
 keyed by ESPN match id (globally unique) and per-competition where it isn't."""
 
+import asyncio
 import os
 import random
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from src.config import (
     DISCORD_AVATAR_URL,
     DATA_DIR,
     POSTED_SCORES_FILE,
+    POST_DELAY_SECONDS,
     STREAMS_URL,
     STREAMS_PASSWORD_FILE,
 )
@@ -566,13 +568,8 @@ class MatchNotificationService:
             color = team_data["data"].get("color", color)
             thumbnail_url = team_data["data"].get("logo", thumbnail_url)
 
-        await self._post_embed(
-            title="GOAL!",
-            description=description,
-            color=color,
-            thumbnail_url=thumbnail_url,
-        )
-
+        # Pre-mark covered_key so the Reddit path won't duplicate this goal
+        # while we wait out POST_DELAY_SECONDS.
         home_norm = normalize_team_name(home_team)
         away_norm = normalize_team_name(away_team)
         teams_key = "_vs_".join(sorted([home_norm, away_norm]))
@@ -587,6 +584,17 @@ class MatchNotificationService:
             }
             save_data(covered_goals, ESPN_COVERED_GOALS_FILE)
             espn_logger.info(f"Tracked ESPN-covered goal: {covered_key}")
+
+        if POST_DELAY_SECONDS > 0:
+            espn_logger.info(f"Delaying ESPN fallback post by {POST_DELAY_SECONDS}s")
+            await asyncio.sleep(POST_DELAY_SECONDS)
+
+        await self._post_embed(
+            title="GOAL!",
+            description=description,
+            color=color,
+            thumbnail_url=thumbnail_url,
+        )
 
     async def _post_embed(
         self,
