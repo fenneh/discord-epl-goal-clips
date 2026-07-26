@@ -9,6 +9,13 @@ from bs4 import BeautifulSoup
 
 from src.utils.logger import app_logger
 
+# Hosts CDNs redirect to when a file's been pulled for abuse/DMCA - the
+# response still looks like a normal 200 video/mp4, just with a placeholder
+# "this content has been restricted" clip instead of the goal.
+RESTRICTED_CONTENT_HOSTS = {
+    "cloudflare-terms-of-service-abuse.com",
+}
+
 
 class VideoExtractor:
     """Extracts video links from various hosting sites."""
@@ -59,6 +66,12 @@ class VideoExtractor:
                     app_logger.info(
                         f"Response: {response.status} {response.content_type}"
                     )
+
+                    if response.url.host in RESTRICTED_CONTENT_HOSTS:
+                        app_logger.warning(
+                            f"URL redirected to a restricted-content placeholder: {response.url}"
+                        )
+                        return False
 
                     if 200 <= response.status < 300:
                         content_type = response.content_type or ""
