@@ -2,8 +2,7 @@
 get_teams_for_competition(); legacy `premier_league_teams` is preserved
 for code that still imports it directly."""
 
-from src.config.competitions import EPL, WORLD_CUP_2026
-from src.config.national_teams import national_teams
+from src.config.competitions import EPL
 
 # Premier League teams and their aliases
 premier_league_teams = {
@@ -150,7 +149,6 @@ premier_league_teams = {
 
 _TEAMS_BY_COMPETITION = {
     EPL.id: premier_league_teams,
-    WORLD_CUP_2026.id: national_teams,
 }
 
 

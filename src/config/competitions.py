@@ -23,19 +23,9 @@ EPL = Competition(
     schedule_title="Premier League",
 )
 
-WORLD_CUP_2026 = Competition(
-    id="world_cup_2026",
-    name="FIFA World Cup 2026",
-    espn_league="world_cup",
-    color=0xE53935,
-    logo="https://a.espncdn.com/i/leaguelogos/soccer/500/4.png",
-    schedule_title="World Cup",
-)
-
 
 _REGISTRY: dict[str, Competition] = {
     EPL.id: EPL,
-    WORLD_CUP_2026.id: WORLD_CUP_2026,
 }
 
 
